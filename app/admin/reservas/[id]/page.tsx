@@ -10,7 +10,6 @@ import type {
   ReservationAttachment,
   ReservationStatus,
 } from '@/components/landing-reserva/types';
-import type { StockMovement } from '@/lib/stock';
 import ProtectedRoute from '@/components/admin/ProtectedRoute';
 import AdminLayout from '@/components/admin/AdminLayout';
 import { Badge } from '@/components/ui/badge';
@@ -64,7 +63,6 @@ const reservationStatusOptions: { value: ReservationStatus; label: string }[] = 
   { value: 'cancelled', label: 'Cancelada' },
 ];
 
-type StockSummary = { baseCapacity: number; available: number; movements: StockMovement[] };
 type PaymentMovementType = 'payment' | 'extra' | 'discount' | 'refund' | 'adjustment';
 type PaymentFormState = { movementType: PaymentMovementType; amount: string; method: string; reference: string; message: string };
 
@@ -195,8 +193,6 @@ export default function ReservaDetailPage() {
   const [removingIds, setRemovingIds] = useState<string[]>([]);
   const [payments, setPayments] = useState<ReservaPaymentEvent[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
-  const [stock, setStock] = useState<StockSummary | null>(null);
-  const [stockLoading, setStockLoading] = useState(false);
   const [otherPurchases, setOtherPurchases] = useState<Reservation[]>([]);
     const [vendorId, setVendorId] = useState('');
   const [links, setLinks] = useState<AdminVendorLink[]>([]);
@@ -287,22 +283,6 @@ export default function ReservaDetailPage() {
     fetchAdminVendorLinks(vendorId).then((l) => { if (!off) setLinks(l); }).catch((e) => { if (!off) { setLinks([]); toast.error(e?.message || 'No pudimos cargar los códigos del vendedor'); } }).finally(() => { if (!off) setLinksLoading(false); });
     return () => { off = true; };
   }, [vendorId]);
-
-  const fetchStock = useCallback(async () => {
-    const packageId = String(reserva?.packageId ?? reserva?.experienceId ?? '').trim();
-    const date = String(reserva?.date ?? '').trim();
-    if (!reserva || !user || !packageId || !date || date === 'sin-fecha') { setStock(null); return; }
-    setStockLoading(true);
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/admin/stock?packageId=${encodeURIComponent(packageId)}&date=${encodeURIComponent(date)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setStock(res.ok ? await res.json() : null);
-    } catch { setStock(null); } finally { setStockLoading(false); }
-  }, [reserva, user]);
-
-  useEffect(() => { fetchStock(); }, [fetchStock]);
 
   useEffect(() => {
     let off = false;
@@ -440,7 +420,6 @@ export default function ReservaDetailPage() {
       if (!res.ok) throw new Error();
       toast.success('Estado actualizado');
       await load(false);
-      await fetchStock();
     } catch { toast.error('No pudimos actualizar el estado'); } finally { setBusy(false); }
   };
 
@@ -839,9 +818,6 @@ export default function ReservaDetailPage() {
                     </Button>
                   </div>
                 )}
-                <p className="mt-3 text-xs text-slate-400">
-                  {stockLoading ? 'Consultando disponibilidad…' : stock ? `${stock.available} lugares disponibles de ${stock.baseCapacity} base.` : 'Sin disponibilidad asociada.'}
-                </p>
               </Card>
 
               {/* Cliente y pasajeros — una sola vez */}
@@ -1013,7 +989,7 @@ export default function ReservaDetailPage() {
           <AlertDialogContent className="rounded-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>¿Cancelar la venta?</AlertDialogTitle>
-              <AlertDialogDescription>Se libera el cupo y se marca como cancelada. Queda en el historial.</AlertDialogDescription>
+              <AlertDialogDescription>Se marca como cancelada y queda en el historial.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Volver</AlertDialogCancel>

@@ -44,22 +44,7 @@ export async function POST(request: Request) {
     const status = String(hold.status ?? '');
     if (status !== 'active') return { ok: true, already: true as const };
 
-    const packageId = String(hold.packageId ?? '').trim();
-    const date = String(hold.date ?? '').trim();
-    const people = Math.max(0, Number(hold.people ?? 0) || 0);
-
     tx.update(holdRef, { status: 'released', releasedAt: now, updatedAt: now });
-
-    if (packageId && date && date !== 'sin-fecha' && people > 0) {
-      const lockRef = doc(db, 'stockHolds', `${packageId}_${date}`);
-      const lockSnap = await tx.get(lockRef);
-      const heldPeople = lockSnap.exists() ? Number((lockSnap.data() as any)?.heldPeople ?? 0) : 0;
-      if (!lockSnap.exists()) {
-        tx.set(lockRef, { packageId, date, heldPeople: 0, createdAt: now, updatedAt: now });
-      } else {
-        tx.update(lockRef, { heldPeople: Math.max(0, Math.floor(heldPeople - people)), updatedAt: now });
-      }
-    }
 
     return { ok: true, already: false as const };
   });

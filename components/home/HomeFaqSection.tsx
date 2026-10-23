@@ -18,8 +18,8 @@ const faqs = [
     a: "Depende del medio de pago y de la disponibilidad del paquete. En checkout vas a ver las opciones habilitadas.",
   },
   {
-    q: "¿Qué pasa si se agotan los cupos?",
-    a: "Los cupos son limitados. Si se agotan, el paquete puede quedar como no disponible hasta que se habiliten nuevos lugares.",
+    q: "¿Las fechas tienen cupos limitados?",
+    a: "No. Las fechas cargadas siguen disponibles aunque haya compras. Cada reserva sí respeta el máximo de personas configurado.",
   },
 ] as const;
 
@@ -73,4 +73,3 @@ export default function HomeFaqSection() {
     </section>
   );
 }
-

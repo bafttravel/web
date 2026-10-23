@@ -280,9 +280,6 @@ export function sanitizePackageSalidas(salidas: Salida[]): Salida[] {
       precio: Number((salida as any)?.precio ?? 0) || 0,
       observaciones: String((salida as any)?.observaciones ?? '').trim(),
       moneda: moneda === 'USD' || moneda === 'EUR' ? moneda : 'ARS',
-      ...(typeof (salida as any)?.cupo === 'number' && Number((salida as any).cupo) > 0
-        ? { cupo: Math.max(0, Math.floor(Number((salida as any).cupo) || 0)) }
-        : {}),
     } as Salida;
   });
 }
@@ -433,7 +430,6 @@ export function buildPackageAdminPayload(args: {
       peopleCategories,
       dates: sanitizedSalidas.map((salida) => ({
         date: salida.fecha,
-        capacity: Math.max(0, Number(salida.cupo ?? 0) || 0),
         enabled: true,
         price: Math.max(0, Number(salida.precio ?? 0) || 0),
       })),

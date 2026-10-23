@@ -351,7 +351,7 @@ function Detail() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Cancelar esta reserva?</AlertDialogTitle>
-            <AlertDialogDescription>Se libera el cupo y se anula tu comisión. Queda en el historial y no se puede revertir desde acá.</AlertDialogDescription>
+            <AlertDialogDescription>Se marca como cancelada y se anula tu comisión. Queda en el historial y no se puede revertir desde acá.</AlertDialogDescription>
           </AlertDialogHeader>
           <Textarea placeholder="Motivo (opcional)" rows={2} maxLength={500} value={cancelNote} onChange={(e) => setCancelNote(e.target.value)} />
           <AlertDialogFooter>

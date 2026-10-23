@@ -205,19 +205,6 @@ export default function F1PaqueteContent({ paquete }: F1PaqueteContentProps) {
                                 {salida.moneda} ${salida.precio.toLocaleString('es-AR')}
                               </span>
                             </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-500 uppercase tracking-wide">Cupo</span>
-                              <span className="inline-flex items-center gap-2">
-                                {salida.cupo ? (
-                                  <>
-                                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-                                    <span className="text-sm font-semibold">{salida.cupo}</span>
-                                  </>
-                                ) : (
-                                  <span className="text-sm text-gray-400">No especificado</span>
-                                )}
-                              </span>
-                            </div>
                             {salida.observaciones && (
                               <div className="pt-2 border-t">
                                 <p className="text-sm text-gray-600">{salida.observaciones}</p>
@@ -236,7 +223,6 @@ export default function F1PaqueteContent({ paquete }: F1PaqueteContentProps) {
                         <th className="text-left p-4 text-sm font-semibold text-gray-700 border-b">Fecha</th>
                         <th className="text-left p-4 text-sm font-semibold text-gray-700 border-b">Ciudad</th>
                         <th className="text-left p-4 text-sm font-semibold text-gray-700 border-b">Precio</th>
-                        <th className="text-left p-4 text-sm font-semibold text-gray-700 border-b">Cupo</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -257,9 +243,6 @@ export default function F1PaqueteContent({ paquete }: F1PaqueteContentProps) {
                               <td className="p-4 border-b text-gray-800">{salida.ciudadSalida || '-'}</td>
                               <td className="p-4 border-b text-gray-800">
                                 {salida.moneda} ${salida.precio.toLocaleString('es-AR')}
-                              </td>
-                              <td className="p-4 border-b text-gray-800">
-                                {salida.cupo ? salida.cupo : 'No especificado'}
                               </td>
                             </tr>
                           );

@@ -11,7 +11,6 @@ export type FaqItem = {
 
 export type BookingDate = {
   date: string; // "2025-02-15" (YYYY-MM-DD)
-  capacity: number;
   enabled: boolean;
 };
 
@@ -81,8 +80,8 @@ export type ReservationPricingSnapshot = {
 
 export type ReservationCapacitySnapshot = {
   date: string;
-  /** Cupo base configurado para esa fecha en bookingConfig.dates[].capacity. */
-  baseCapacity: number;
+  /** Legacy: cupo base configurado antes de eliminar el stock por fecha. */
+  baseCapacity?: number;
   maxPeoplePerBooking: number | null;
   hasSpecificDates: boolean;
   enabled: boolean;
@@ -231,14 +230,14 @@ export type Reservation = {
   emailDelivery?: ReservationEmailDelivery | null;
 };
 
-/** Datos públicos del bloque reserva para el front (available = capacity por ahora, luego descontar reservas). */
+/** Datos públicos del bloque de reserva. Las fechas no se limitan por cupo o stock. */
 export type BookingPublicData = {
   enabled: boolean;
   title: string;
   subtitle1: string;
   subtitle2: string;
   hasSpecificDates: boolean;
-  dates: { date: string; capacity: number; available: number; enabled: boolean }[];
+  dates: { date: string; enabled: boolean }[];
   depositAmount: number;
   /** Si no se define, en el front no se muestra "Máximo X personas" (techo 50). */
   maxPeoplePerBooking?: number;

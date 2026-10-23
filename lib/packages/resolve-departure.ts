@@ -19,7 +19,6 @@ export type ResolvedDepartureConfig = {
   unitAmount: number;
   currency: CartCurrency | null;
   displayCurrency: 'USD' | 'ARS' | 'EUR' | null;
-  baseCapacity: number;
   maxPeople: number;
   seatsEnabled: boolean;
   seatLayoutId: string | null;
@@ -418,16 +417,6 @@ export function resolveDepartureConfig(paquete: Paquete, rawDate: string): Resol
     typeof paquete.bookingConfig?.maxPeoplePerBooking === 'number' && paquete.bookingConfig.maxPeoplePerBooking > 0
       ? paquete.bookingConfig.maxPeoplePerBooking
       : 50;
-  const configuredBookingDate = paquete.bookingConfig?.dates?.find((item) => item.date === date);
-  const explicitCapacity =
-    typeof salida?.cupo === 'number' && Number.isFinite(salida.cupo) && salida.cupo > 0
-      ? salida.cupo
-      : typeof configuredBookingDate?.capacity === 'number' && Number.isFinite(configuredBookingDate.capacity) && configuredBookingDate.capacity > 0
-        ? configuredBookingDate.capacity
-        : typeof paquete.capacidadMaxima === 'number' && Number.isFinite(paquete.capacidadMaxima) && paquete.capacidadMaxima > 0
-          ? paquete.capacidadMaxima
-          : maxPeople;
-  const baseCapacity = Math.max(0, Math.floor(explicitCapacity));
   const seatsEnabled = Boolean(salida?.seatSelectionEnabled ?? paquete.seatSelectionEnabled);
   const seatLayoutId = normalizeText(salida?.seatLayoutId) || normalizeText(paquete.seatLayoutId) || null;
 
@@ -441,7 +430,6 @@ export function resolveDepartureConfig(paquete: Paquete, rawDate: string): Resol
     unitAmount,
     currency,
     displayCurrency,
-    baseCapacity,
     maxPeople,
     seatsEnabled,
     seatLayoutId,

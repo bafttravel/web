@@ -48,7 +48,6 @@ type Props = {
   hideReferral?: boolean;
   hideVendorSelect?: boolean;
   hideStatus?: boolean;
-  hideOverbook?: boolean;
   apiEndpoint?: string;
   successRedirect?: string;
   initialData?: {
@@ -132,7 +131,7 @@ const statusOptions: { value: ReservationStatus; label: string }[] = [
   { value: 'completed', label: 'Completada' },
 ];
 
-export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSelect, hideStatus, hideOverbook, apiEndpoint, successRedirect, initialData }: Props) {
+export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSelect, hideStatus, apiEndpoint, successRedirect, initialData }: Props) {
   const router = useRouter();
   const { user } = useAuth();
   const [selectedPackageId, setSelectedPackageId] = useState<string>(
@@ -170,9 +169,6 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
   const [status, setStatus] = useState<ReservationStatus>('reserved');
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
-  const [stockInfo, setStockInfo] = useState<{ baseCapacity: number; available: number } | null>(null);
-  const [stockLoading, setStockLoading] = useState(false);
-  const [allowOverbook, setAllowOverbook] = useState(false);
   const [vendorId, setVendorId] = useState<string>('');
   const [referralLinks, setReferralLinks] = useState<AdminVendorLink[]>([]);
   const [selectedReferralCode, setSelectedReferralCode] = useState<string>('');
@@ -208,10 +204,6 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
       setSelectedPackageId(paquetes[0].id);
     }
   }, [paquetes, selectedPackageId]);
-
-  useEffect(() => {
-    setAllowOverbook(false);
-  }, [selectedPackageId, date]);
 
   useEffect(() => {
     if (hideReferral || hideVendorSelect) return;
@@ -410,11 +402,6 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
     if (currency === 'USD') return `USD ${value.toLocaleString('en-US')}`;
     return `${value.toFixed(2)} ${currency}`;
   }, [amountTotal, currency]);
-
-  useEffect(() => {
-    setStockInfo(null);
-    setStockLoading(false);
-  }, [user, selectedPaquete?.id, date]);
 
   const salida = useMemo(() => {
     if (!selectedPaquete || !date || date === 'sin-fecha') return null;
@@ -616,7 +603,6 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
           peopleAdults: Math.max(0, Number(adults) || 0),
           peopleMinors: Math.max(0, Number(minors) || 0),
           ...(!hideStatus ? { status } : {}),
-          ...(!hideOverbook ? { allowOverbook: Boolean(allowOverbook) } : {}),
           customerEmail: form.customerEmail,
           customerName: `${form.customerFirstName.trim()} ${form.customerLastName.trim()}`.trim(),
           customerPhone: form.customerPhone || undefined,

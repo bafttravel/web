@@ -5,7 +5,6 @@ import {
   buildBookingCalendarMonth,
   buildBookingWindowMonths,
   filterAvailabilityToBookingWindow,
-  getMaxSelectablePeople,
 } from '../lib/packages/booking-calendar.ts';
 import {
   clampPeopleBreakdownToMax,
@@ -40,13 +39,13 @@ test('rechaza URLs que no son de Google Maps', () => {
   assert.equal(isGoogleMapsEmbedUrl('https://example.com/mapa'), false);
 });
 
-test('filtra la disponibilidad excluyendo fechas pasadas', () => {
+test('filtra las fechas cargadas excluyendo las pasadas', () => {
   const baseDate = new Date('2026-08-03T12:00:00');
   const filtered = filterAvailabilityToBookingWindow(
     [
-      { date: '2026-08-05', available: 4, capacity: 8 },
-      { date: '2026-09-10', available: 2, capacity: 8 },
-      { date: '2026-10-02', available: 6, capacity: 10 },
+      { date: '2026-08-05' },
+      { date: '2026-09-10' },
+      { date: '2026-10-02' },
     ],
     baseDate
   );
@@ -65,45 +64,39 @@ test('genera los meses visibles del calendario', () => {
   ]);
 });
 
-test('arma celdas seleccionables y agotadas en el calendario', () => {
+test('permite seleccionar fechas cargadas sin consultar cupos o stock', () => {
   const cells = buildBookingCalendarMonth({
     year: 2026,
     month: 7,
     entries: [
-      { date: '2026-08-05', available: 3, capacity: 8 },
-      { date: '2026-08-06', available: 0, capacity: 8 },
+      { date: '2026-08-05' },
+      { date: '2026-08-06' },
     ],
   });
 
-  const availableCell = cells.find((cell) => cell.isoDate === '2026-08-05');
-  const soldOutCell = cells.find((cell) => cell.isoDate === '2026-08-06');
+  const firstDeparture = cells.find((cell) => cell.isoDate === '2026-08-05');
+  const secondDeparture = cells.find((cell) => cell.isoDate === '2026-08-06');
 
-  assert.ok(availableCell);
-  assert.equal(availableCell?.isSelectable, true);
-  assert.equal(availableCell?.isAvailable, true);
+  assert.ok(firstDeparture);
+  assert.equal(firstDeparture?.isSelectable, true);
 
-  assert.ok(soldOutCell);
-  assert.equal(soldOutCell?.isSoldOut, true);
-  assert.equal(soldOutCell?.isSelectable, false);
+  assert.ok(secondDeparture);
+  assert.equal(secondDeparture?.isSelectable, true);
 });
 
-test('bloquea días sin cupo suficiente para el grupo', () => {
+test('solo bloquea fechas que no están cargadas o no cumplen la anticipación', () => {
   const cells = buildBookingCalendarMonth({
     year: 2026,
     month: 7,
-    requiredPeople: 4,
-    entries: [{ date: '2026-08-05', available: 3, capacity: 8 }],
+    entries: [{ date: '2026-08-05' }],
+    minBookableDateIso: '2026-08-06',
   });
-  const cell = cells.find((item) => item.isoDate === '2026-08-05');
-  assert.ok(cell);
-  assert.equal(cell?.isSelectable, false);
-  assert.equal(cell?.isAvailable, false);
-});
-
-test('limita la cantidad de personas por disponibilidad y máximo por reserva', () => {
-  assert.equal(getMaxSelectablePeople(8, 5), 5);
-  assert.equal(getMaxSelectablePeople(3, 6), 3);
-  assert.equal(getMaxSelectablePeople(0, 6), 0);
+  const tooSoon = cells.find((item) => item.isoDate === '2026-08-05');
+  const noDeparture = cells.find((item) => item.isoDate === '2026-08-06');
+  assert.ok(tooSoon);
+  assert.equal(tooSoon?.isSelectable, false);
+  assert.ok(noDeparture);
+  assert.equal(noDeparture?.isSelectable, false);
 });
 
 test('normaliza categorías de pasajeros y evita duplicados', () => {

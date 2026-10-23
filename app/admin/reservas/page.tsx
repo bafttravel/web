@@ -1026,15 +1026,11 @@ export default function ReservasPage() {
                           </div>
                           {(() => {
                             const unitAmount = getUnitAmountFromReservation(r);
-                            const baseCapacity = r.capacitySnapshot?.baseCapacity;
-                            if (!unitAmount && typeof baseCapacity !== 'number') return null;
+                            if (!unitAmount) return null;
                             return (
                               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-400">
                                 {unitAmount ? (
                                   <span>Unit: {formatAmount(unitAmount, r.currency)}</span>
-                                ) : null}
-                                {typeof baseCapacity === 'number' ? (
-                                  <span>Cupo base: {baseCapacity}</span>
                                 ) : null}
                               </div>
                             );

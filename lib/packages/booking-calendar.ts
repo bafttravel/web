@@ -1,20 +1,12 @@
-import { isDateBookable } from './booking-rules.ts';export type BookingAvailabilityItem = {
-  date: string;
-  available: number;
-  capacity: number;
-};
+export type BookingAvailabilityItem = { date: string };
 
 export type BookingCalendarCell = {
   isoDate: string;
   day: number;
   inMonth: boolean;
-  isAvailable: boolean;
-  isSoldOut: boolean;
   /** La salida existe pero no cumple la anticipación mínima (ej: 48 hs). */
   isTooSoon: boolean;
   isSelectable: boolean;
-  available: number;
-  capacity: number;
 };
 
 function getMonthStart(date: Date) {
@@ -53,24 +45,16 @@ export function filterAvailabilityToBookingWindow(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function getMaxSelectablePeople(available: number, maxPeoplePerBooking: number) {
-  const safeAvailable = Math.max(0, Math.floor(Number(available) || 0));
-  const safeMaxPeople = Math.max(1, Math.floor(Number(maxPeoplePerBooking) || 1));
-  return Math.max(0, Math.min(safeAvailable, safeMaxPeople));
-}
-
 export function buildBookingCalendarMonth(args: {
   year: number;
   month: number;
   entries: BookingAvailabilityItem[];
-  requiredPeople?: number;
   /** Primera fecha reservable (YYYY-MM-DD); los días anteriores quedan bloqueados por anticipación. */
   minBookableDateIso?: string;
 }) {
-  const { year, month, entries, requiredPeople } = args;
-  const minRequired = Math.max(1, Math.floor(Number(requiredPeople) || 1));
+  const { year, month, entries } = args;
   const minBookableDateIso = String(args.minBookableDateIso ?? '').trim();
-  const availabilityMap = new Map(entries.map((entry) => [entry.date, entry]));
+  const departureDates = new Set(entries.map((entry) => entry.date));
   const firstDay = new Date(year, month, 1);
   const startOffset = (firstDay.getDay() + 6) % 7;
   const startDate = new Date(year, month, 1 - startOffset);
@@ -79,23 +63,15 @@ export function buildBookingCalendarMonth(args: {
   for (let index = 0; index < 42; index += 1) {
     const current = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + index);
     const isoDate = toIsoDate(current);
-    const availability = availabilityMap.get(isoDate);
-    const available = Math.max(0, Number(availability?.available ?? 0) || 0);
-    const capacity = Math.max(0, Number(availability?.capacity ?? 0) || 0);
     const isTooSoon = Boolean(minBookableDateIso) && isoDate < minBookableDateIso;
-    const isAvailable = available >= minRequired && !isTooSoon;
-    const isSoldOut = Boolean(availability) && available <= 0;
+    const hasDeparture = departureDates.has(isoDate);
 
     cells.push({
       isoDate,
       day: current.getDate(),
       inMonth: current.getMonth() === month,
-      isAvailable,
-      isSoldOut,
       isTooSoon,
-      isSelectable: current.getMonth() === month && isAvailable,
-      available,
-      capacity,
+      isSelectable: current.getMonth() === month && hasDeparture && !isTooSoon,
     });
   }
 

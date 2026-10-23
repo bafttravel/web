@@ -245,7 +245,7 @@ Para probar el sandbox:
 4. Configurá `WETRAVEL_WEBHOOK_SECRET` únicamente si WeeTravel entrega un secreto y firma documentada para tu cuenta. Si no hay firma oficial, dejalo vacío; la integración no inventa una validación HMAC.
 5. En el checkout elegí **WeTravel**, completá una reserva de prueba y verificá que la redirección abra el Payment Link con importe y moneda correctos.
 6. Desde el panel de WeeTravel completá el pago y verificá que el webhook responda HTTP 200. Los eventos recibidos se guardan en Firestore en `wetravelEvents`.
-7. Verificá que el evento exitoso cree una reserva, consuma el hold, genere un código y cree tres documentos en `emailJobs` con prefijo `wt_`.
+7. Verificá que el evento exitoso cree una reserva, genere un código y cree tres documentos en `emailJobs` con prefijo `wt_`.
 8. Reenviá el mismo evento y comprobá que no se genere una segunda reserva ni emails duplicados.
 
 La ruta `GET /api/wetravel/status?intentId=...` permite consultar el estado local del checkout. La confirmación real depende del webhook o de la reconciliación protegida por `CRON_SECRET`; llegar a `/checkout/success` no convierte por sí solo un pago pendiente en aprobado.
@@ -501,7 +501,7 @@ El componente `PaquetesClient` incluye un sistema de filtros avanzado:
   ciudadSalida: string;
   precio: number;
   moneda: 'USD' | 'ARS' | 'EUR';
-  cupo?: number;
+  cupo?: number; // legacy: ya no limita ni bloquea reservas
   observaciones?: string;
 }
 ```

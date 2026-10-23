@@ -55,7 +55,7 @@ No agregar cron jobs en `vercel.json`.
 2. El cliente paga en WeeTravel.
 3. WeeTravel envía `payment.updated` o `booking.updated`.
 4. El webhook valida importe, moneda y correlación.
-5. Una transacción crea una única reserva, consume el hold y genera el código.
+5. Una transacción crea una única reserva y genera el código; las ventas no consumen cupos ni stock.
 6. Se crean los jobs `wt_<intentId>_cliente_confirm`, `wt_<intentId>_cliente_voucher` y `wt_<intentId>_admin`.
 7. GitHub Actions procesa los emails con reintentos.
 
@@ -72,7 +72,7 @@ GET /api/wetravel/status?intentId=<id>
 - Pago pendiente.
 - Reenvío del mismo webhook.
 - Eventos fuera de orden.
-- Hold vencido.
+- Pago aprobado aunque el cliente haya tardado en volver desde el proveedor.
 - Email fallido y reintentado.
 - Reembolso o disputa.
 

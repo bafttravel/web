@@ -798,7 +798,7 @@ export default function PackageForm(props: Props) {
                 )}
               />
               <p className="mt-2 text-sm text-gray-500">
-                El usuario podrá reservar hasta este límite en una sola operación. El calendario además validará el cupo disponible de cada día.
+                El usuario podrá reservar hasta este límite en una sola operación. No hay un límite total de ventas por fecha.
               </p>
               {errors.maxPersonasPorReserva && <p className="text-base text-red-500 mt-1">{errors.maxPersonasPorReserva.message}</p>}
             </div>
@@ -834,7 +834,7 @@ export default function PackageForm(props: Props) {
                 <div>
                   <Label className="text-base">Categorías de pasajeros</Label>
                   <p className="mt-1 text-sm text-gray-500">
-                    Define los mínimos y máximos por tipo. El total siempre se limita por el máximo por reserva y por el cupo disponible.
+                    Define los mínimos y máximos por tipo. El total se limita por el máximo de personas por reserva.
                   </p>
                 </div>
                 <Button

@@ -76,15 +76,12 @@ export async function finalizeWeTravelPaidCheckout(input: {
   const reservationRef = doc(db, 'reservas', reservationId);
   const paymentId = event.paymentId || event.bookingId || event.paymentLinkId || intentId;
   const paymentRef = doc(collection(db, 'reservas', reservationId, 'payments'), paymentId);
-  const stockRef = doc(db, 'stockMovimientos', reservationId);
   const confirmJobRef = doc(db, 'emailJobs', `wt_${intentId}_cliente_confirm`);
   const voucherJobRef = doc(db, 'emailJobs', `wt_${intentId}_cliente_voucher`);
   const adminJobRef = doc(db, 'emailJobs', `wt_${intentId}_admin`);
-  const holdId = String(intentData.holdId || '').trim();
   const now = Timestamp.now();
   const nextVoucherAt = voucherAt(date, now);
   const shouldQueueVoucher = date !== 'sin-fecha';
-  const baseCapacity = pkg ? resolveDepartureConfig(pkg, date).baseCapacity : 0;
   const selectedExtras = selectedExtrasSnapshot(intentData.selectedExtras);
   const from = getFromEmail(true);
   const referredBy = await buildReferredByFromCode({
@@ -101,21 +98,10 @@ export async function finalizeWeTravelPaidCheckout(input: {
   const result = await runTransaction(db, async (tx) => {
     const existing = await tx.get(reservationRef);
     if (existing.exists()) return { alreadyExists: true, reservationId, reservationCode: String(existing.data()?.reservationCode || '') };
-    const stockSnap = await tx.get(stockRef);
     const confirmSnap = await tx.get(confirmJobRef);
     const voucherSnap = await tx.get(voucherJobRef);
     const adminSnap = await tx.get(adminJobRef);
-    const holdRef = holdId ? doc(db, 'reservationHolds', holdId) : null;
-    const holdSnap = holdRef ? await tx.get(holdRef) : null;
-    const lockRef = holdId && date !== 'sin-fecha' ? doc(db, 'stockHolds', `${packageId}_${date}`) : null;
-    const lockSnap = lockRef ? await tx.get(lockRef) : null;
     const allocation = await prepareNextReservationCodeInTransaction(tx);
-    if (holdSnap?.exists()) {
-      const holdStatus = String(holdSnap.data()?.status || '');
-      if (holdStatus !== 'active' && holdStatus !== 'consumed') {
-        throw new Error(`El hold del checkout no está disponible (${holdStatus || 'sin estado'}).`);
-      }
-    }
     const reservationCode = allocation.reservationCode;
     const peopleLabel = people === 1 ? '1 persona' : `${people} personas`;
     const lookupUrl = siteUrl ? `${siteUrl}/consultar-reserva?code=${encodeURIComponent(reservationCode)}` : undefined;
@@ -182,7 +168,7 @@ export async function finalizeWeTravelPaidCheckout(input: {
         extrasTotalAmount: intentData.extrasTotalAmount ?? null, currency, paymentMethod: 'wetravel',
       }),
       capacitySnapshot: {
-        date, baseCapacity, maxPeoplePerBooking: pkg ? resolveDepartureConfig(pkg, date).maxPeople : null,
+        date, maxPeoplePerBooking: pkg ? resolveDepartureConfig(pkg, date).maxPeople : null,
         hasSpecificDates: Boolean(pkg?.salidas?.length), enabled: pkg ? resolveDepartureConfig(pkg, date).enabled : false,
       },
       packageSnapshot: { id: packageId, slug: packageSlug, title: finalTitle },
@@ -194,17 +180,6 @@ export async function finalizeWeTravelPaidCheckout(input: {
       createdAt: now, updatedAt: now,
     });
 
-    if (!stockSnap.exists() && date !== 'sin-fecha') {
-      tx.set(stockRef, { packageId, date, type: 'reserva', quantity: -people, author: 'system', referenceId: paymentId,
-        note: 'Reserva WeeTravel (pago confirmado)', baseCapacityAtThatTime: baseCapacity, createdAt: now });
-    }
-    if (holdSnap?.exists() && String(holdSnap.data()?.status || '') === 'active' && holdRef) {
-      tx.update(holdRef, { status: 'consumed', consumedAt: now, paymentId, provider: 'wetravel', updatedAt: now });
-      if (lockRef && lockSnap?.exists()) {
-        const heldPeople = Number(lockSnap.data()?.heldPeople || 0);
-        tx.update(lockRef, { heldPeople: Math.max(0, heldPeople - people), updatedAt: now });
-      }
-    }
     if (!confirmSnap.exists()) tx.set(confirmJobRef, { type: 'cliente_confirmacion_compra', status: 'pending', to: customerEmail, from, replyTo,
       subject: `Compra confirmada: ${finalTitle}`, html: htmlConfirm, text: textConfirm, attempts: 0, lastError: null,
       providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: now, createdAt: now, updatedAt: now });
@@ -227,23 +202,14 @@ export async function finalizeWeTravelPaidCheckout(input: {
 }
 
 export async function releaseWeTravelHold(intentId: string, intentData: any, reason: string) {
-  const packageId = String(intentData.packageId || '').trim();
-  const date = String(intentData.date || 'sin-fecha');
-  const people = Math.max(0, Number(intentData.people || 0) || 0);
   const holdId = String(intentData.holdId || '').trim();
   const now = Timestamp.now();
   if (holdId) {
     await runTransaction(db, async (tx) => {
       const holdRef = doc(db, 'reservationHolds', holdId);
       const holdSnap = await tx.get(holdRef);
-      const lockRef = packageId && date !== 'sin-fecha' ? doc(db, 'stockHolds', `${packageId}_${date}`) : null;
-      const lockSnap = lockRef ? await tx.get(lockRef) : null;
       if (holdSnap.exists() && String(holdSnap.data()?.status || '') === 'active') {
         tx.update(holdRef, { status: 'released', releasedAt: now, releaseReason: reason, updatedAt: now });
-        if (lockRef && lockSnap?.exists()) {
-          const held = Number(lockSnap.data()?.heldPeople || 0);
-          tx.update(lockRef, { heldPeople: Math.max(0, held - people), updatedAt: now });
-        }
       }
     });
   }

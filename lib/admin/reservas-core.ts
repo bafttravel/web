@@ -7,7 +7,6 @@ import {
   updateReservaStatus,
 } from '@/lib/reservas';
 import { getPaqueteById } from '@/lib/paquetes';
-import { getStockDisponible, registrarMovimientoStock } from '@/lib/stock';
 import { randomUUID } from 'crypto';
 import { arrayUnion, collection, doc, getDoc, runTransaction, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -103,7 +102,6 @@ const adminReservaSchema = z.object({
   peopleMinors: z.number().int().min(0).max(50).optional(),
   depositPercentAdults: z.number().min(0).max(100).optional(),
   depositPercentMinors: z.number().min(0).max(100).optional(),
-  allowOverbook: z.boolean().optional(),
   customerEmail: z.string().email(),
   customerName: z.string().min(2),
   customerPhone: z.string().max(40).optional(),
@@ -177,14 +175,6 @@ function parseDate(value: unknown): string {
 
 function getErrorMessage(error: unknown, fallback = 'Error desconocido'): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-function getBaseCapacity(
-  paquete: Awaited<ReturnType<typeof getPaqueteById>> | null,
-  date: string
-): number {
-  if (!paquete) return 0;
-  return resolveDepartureConfig(paquete, date).baseCapacity;
 }
 
 function isEnabledDate(paquete: Awaited<ReturnType<typeof getPaqueteById>> | null, date: string): boolean {
@@ -462,10 +452,9 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
     if (allowed && allowed.length > 0 && !allowed.includes(paquete.id)) {
       return NextResponse.json({ error: 'No tenés permiso para este paquete.' }, { status: 403 });
     }
-    // El vendedor siempre carga ventas a su nombre, sin sobreventa ni estados finales.
+    // El vendedor siempre carga ventas a su nombre y sin estados finales.
     payload.vendorId = ctx.vendor.id;
     payload.referralCode = undefined;
-    payload.allowOverbook = false;
     if (payload.manualExtras?.length) {
       const options = getPackageAddonOptions(paquete as any);
       const allowedExtras = payload.manualExtras.every((extra) =>
@@ -491,7 +480,6 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
     const peopleMinors = derivedPeople > 0 ? minors : null;
     const depositPercentAdults = typeof (payload as any).depositPercentAdults === 'number' ? Number((payload as any).depositPercentAdults) : null;
     const depositPercentMinors = typeof (payload as any).depositPercentMinors === 'number' ? Number((payload as any).depositPercentMinors) : null;
-    const allowOverbook = Boolean((payload as any).allowOverbook);
 
     if (people > maxPeople) {
       return NextResponse.json({ error: `Máximo permitido por reserva: ${maxPeople}` }, { status: 400 });
@@ -516,17 +504,6 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
       return NextResponse.json({ error: 'Este paquete no tiene configurado un valor de reserva válido.' }, { status: 400 });
     }
     const amountTotal = computedPricing.subtotalAmount;
-
-    const baseCapacity = payload.date !== 'sin-fecha' ? getBaseCapacity(paquete, payload.date) : 0;
-    if (!allowOverbook && payload.date !== 'sin-fecha' && (payload.status ?? 'reserved') !== 'cancelled') {
-      const available = await getStockDisponible(paquete.id, payload.date, baseCapacity);
-      if (people > available) {
-        return NextResponse.json(
-          { error: `No hay cupo suficiente para esa fecha. Disponible: ${available}.` },
-          { status: 400 }
-        );
-      }
-    }
 
     const selectedSeats = Array.isArray(payload.selectedSeats)
       ? Array.from(new Set(payload.selectedSeats.map((s) => String(s).trim()).filter(Boolean)))
@@ -603,7 +580,6 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
     const now = Timestamp.now();
     const status = payload.status ?? 'reserved';
     const reservaRef = doc(collection(db, COLLECTION));
-    const stockRef = payload.date !== 'sin-fecha' ? doc(db, 'stockMovimientos', `admin_${reservaRef.id}`) : null;
     const seatsNeeded = Boolean(seatsEnabled && seatLayoutId && payload.date !== 'sin-fecha');
     const departureId = getSeatDepartureId(paquete.id, payload.date);
     const seatResRef = doc(db, 'seatReservations', departureId);
@@ -613,24 +589,6 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
         // Todas las lecturas primero.
         const templateSnap = seatsNeeded ? await tx.get(doc(db, 'seatLayouts', seatLayoutId)) : null;
         const seatResSnap = seatsNeeded ? await tx.get(seatResRef) : null;
-
-        // A partir de acá, solo escrituras. El doc de stock usa id único
-        // (`admin_${reservaRef.id}`), así que se escribe directo sin leer.
-        if (stockRef && status !== 'cancelled') {
-          tx.set(stockRef, {
-            packageId: paquete.id,
-            date: payload.date,
-            type: 'reserva',
-            quantity: -people,
-            author: adminUser?.email ?? 'admin',
-            referenceId: reservaRef.id,
-            note: payload.statusNote ?? `Reserva manual creada (${status})${allowOverbook ? ' · OVERBOOK' : ''}`,
-            baseCapacityAtThatTime: baseCapacity,
-            amountTotal: repriced.subtotalAmount,
-            currency,
-            createdAt: now,
-          });
-        }
 
         if (seatsNeeded) {
           if (!templateSnap?.exists()) {
@@ -756,7 +714,6 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
           }),
           capacitySnapshot: {
             date: payload.date,
-            baseCapacity,
             maxPeoplePerBooking: departureConfig.maxPeople,
             hasSpecificDates: Boolean(paquete.salidas?.length),
             enabled: departureConfig.enabled,
@@ -846,19 +803,6 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
 
   try {
     if (payload.status && payload.status !== reservation.status) {
-      // Validación de cupo si se reactiva una cancelada.
-      if (reservation.status === 'cancelled' && payload.status !== 'cancelled' && reservation.date !== 'sin-fecha') {
-        const paquete = await getPaqueteById(reservation.packageId ?? reservation.experienceId);
-        const baseCapacity = getBaseCapacity(paquete, reservation.date);
-        const available = await getStockDisponible(reservation.packageId ?? reservation.experienceId, reservation.date, baseCapacity);
-        if (reservation.people > available) {
-          return NextResponse.json(
-            { error: `No hay cupo suficiente para reactivar. Disponible: ${available}.` },
-            { status: 400 }
-          );
-        }
-      }
-
       const hasSeats = Array.isArray((reservation as any).selectedSeats) && (reservation as any).selectedSeats.length > 0;
       const seatLayoutId = (reservation as any).seatLayoutId ? String((reservation as any).seatLayoutId) : '';
       const shouldTouchSeats = hasSeats && seatLayoutId && reservation.date && reservation.date !== 'sin-fecha';
@@ -917,37 +861,6 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         }
       }
 
-      if (payload.status === 'cancelled') {
-        const paquete = await getPaqueteById(reservation.packageId ?? reservation.experienceId);
-        const baseCapacity = getBaseCapacity(paquete, reservation.date);
-        await registrarMovimientoStock({
-          packageId: reservation.packageId ?? reservation.experienceId,
-          date: reservation.date,
-          type: 'entrada',
-          quantity: reservation.people,
-          author: adminUser?.email ?? 'admin',
-          referenceId: reservation.id,
-          note: payload.note ?? 'Cancelación de reserva',
-          baseCapacityAtThatTime: baseCapacity,
-          amountTotal: reservation.amountTotal ?? 0,
-          currency: reservation.currency,
-        });
-      } else if (reservation.status === 'cancelled') {
-        const paquete = await getPaqueteById(reservation.packageId ?? reservation.experienceId);
-        const baseCapacity = getBaseCapacity(paquete, reservation.date);
-        await registrarMovimientoStock({
-          packageId: reservation.packageId ?? reservation.experienceId,
-          date: reservation.date,
-          type: 'reserva',
-          quantity: -reservation.people,
-          author: adminUser?.email ?? 'admin',
-          referenceId: reservation.id,
-          note: payload.note ?? 'Reserva reactivada',
-          baseCapacityAtThatTime: baseCapacity,
-          amountTotal: reservation.amountTotal ?? 0,
-          currency: reservation.currency,
-        });
-      }
       await updateReservaStatus(payload.reservationId, payload.status, {
         note: payload.note,
       });
@@ -967,44 +880,6 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       if (!isEnabledDate(paquete, payload.date)) {
         return NextResponse.json({ error: 'La nueva fecha no está habilitada para este paquete.' }, { status: 400 });
       }
-      const baseCapacityNew = payload.date !== 'sin-fecha' ? getBaseCapacity(paquete, payload.date) : 0;
-      const baseCapacityOld = reservation.date !== 'sin-fecha' ? getBaseCapacity(paquete, reservation.date) : 0;
-
-      // Si la reserva está activa, mover cupo: liberar fecha vieja y reservar fecha nueva.
-      if (reservation.status !== 'cancelled' && reservation.date !== 'sin-fecha' && payload.date !== 'sin-fecha') {
-        const availableNew = await getStockDisponible(reservation.packageId ?? reservation.experienceId, payload.date, baseCapacityNew);
-        if (reservation.people > availableNew) {
-          return NextResponse.json(
-            { error: `No hay cupo suficiente en la nueva fecha. Disponible: ${availableNew}.` },
-            { status: 400 }
-          );
-        }
-        await registrarMovimientoStock({
-          packageId: reservation.packageId ?? reservation.experienceId,
-          date: reservation.date,
-          type: 'entrada',
-          quantity: reservation.people,
-          author: adminUser?.email ?? 'admin',
-          referenceId: reservation.id,
-          note: payload.note ?? `Reprogramación: libera ${reservation.date}`,
-          baseCapacityAtThatTime: baseCapacityOld,
-          amountTotal: reservation.amountTotal ?? 0,
-          currency: reservation.currency,
-        });
-        await registrarMovimientoStock({
-          packageId: reservation.packageId ?? reservation.experienceId,
-          date: payload.date,
-          type: 'reserva',
-          quantity: -reservation.people,
-          author: adminUser?.email ?? 'admin',
-          referenceId: reservation.id,
-          note: payload.note ?? `Reprogramación: reserva ${payload.date}`,
-          baseCapacityAtThatTime: baseCapacityNew,
-          amountTotal: reservation.amountTotal ?? 0,
-          currency: reservation.currency,
-        });
-      }
-
       const historyEntry = {
         status: reservation.status,
         actor: 'admin' as const,
@@ -1017,7 +892,6 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         statusHistory: arrayUnion(historyEntry),
         capacitySnapshot: {
           date: payload.date,
-          baseCapacity: baseCapacityNew,
           maxPeoplePerBooking: typeof paquete.bookingConfig?.maxPeoplePerBooking === 'number' ? paquete.bookingConfig.maxPeoplePerBooking : null,
           hasSpecificDates: Boolean(paquete.bookingConfig?.hasSpecificDates),
           enabled: paquete.bookingConfig?.enabled !== false,

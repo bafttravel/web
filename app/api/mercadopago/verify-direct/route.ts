@@ -358,7 +358,6 @@ export async function POST(request: Request) {
   }
   const customerPhone = payer?.phone?.number || intentData.customerPhone || '';
   const customerDocument = payer?.identification?.number || intentData.customerDocument || '';
-  const baseCapacity = pkg ? resolveDepartureConfig(pkg, date).baseCapacity : 0;
   const from = getFromEmail(true);
   const replyTo = process.env.SUPPORT_EMAIL || getFromEmail(false);
   const now = Timestamp.now();
@@ -420,36 +419,18 @@ export async function POST(request: Request) {
 
   const reservationId = `mp_${directPaymentId}`;
   const reservaRef = doc(db, 'reservas', reservationId);
-  const stockRef = doc(db, 'stockMovimientos', `mp_${reservationId}`);
   const emailClienteConfirmRef = doc(db, 'emailJobs', `mp_${reservationId}_cliente_confirm`);
   const emailClienteVoucherRef = doc(db, 'emailJobs', `mp_${reservationId}_cliente_voucher`);
   const emailAdminRef = doc(db, 'emailJobs', `mp_${reservationId}_admin`);
   const paymentRef = doc(collection(db, 'reservas', reservationId, 'payments'), String(directPaymentId));
-  const holdId = typeof intentData?.holdId === 'string' ? String(intentData.holdId).trim() : '';
 
   try {
     await runTransaction(db, async (tx) => {
       const reservaSnap = await tx.get(reservaRef);
       if (reservaSnap.exists()) return;
-      const stockSnap = await tx.get(stockRef);
       const emailClienteConfirmSnap = await tx.get(emailClienteConfirmRef);
       const emailClienteVoucherSnap = await tx.get(emailClienteVoucherRef);
       const emailAdminSnap = await tx.get(emailAdminRef);
-
-      let holdWasActive = false;
-      let lockSnap: any = null;
-      let lockRef: any = null;
-      if (holdId && packageId && date && date !== 'sin-fecha') {
-        const holdRef = doc(db, 'reservationHolds', holdId);
-        const holdSnap = await tx.get(holdRef);
-        if (holdSnap.exists()) {
-          holdWasActive = String((holdSnap.data() as any)?.status ?? '') === 'active';
-          if (holdWasActive) {
-            lockRef = doc(db, 'stockHolds', `${packageId}_${date}`);
-            lockSnap = await tx.get(lockRef);
-          }
-        }
-      }
 
       tx.set(reservaRef, {
         packageId,
@@ -505,7 +486,6 @@ export async function POST(request: Request) {
         }),
         capacitySnapshot: {
           date,
-          baseCapacity,
           maxPeoplePerBooking: pkg ? resolveDepartureConfig(pkg, date).maxPeople : null,
           hasSpecificDates: Boolean(pkg?.salidas?.length),
           enabled: pkg ? resolveDepartureConfig(pkg, date).enabled : false,
@@ -535,37 +515,6 @@ export async function POST(request: Request) {
         createdAt: now,
         updatedAt: now,
       });
-
-      if (!stockSnap.exists() && date) {
-        tx.set(stockRef, {
-          packageId,
-          date,
-          type: 'reserva',
-          quantity: -people,
-          author: 'system',
-          referenceId: String(directPaymentId),
-          note: 'Reserva Mercado Pago (pago confirmado)',
-          baseCapacityAtThatTime: baseCapacity,
-          createdAt: now,
-        });
-      }
-
-      if (holdWasActive && holdId) {
-        tx.update(doc(db, 'reservationHolds', holdId), {
-          status: 'consumed',
-          consumedAt: now,
-          paymentId: String(directPaymentId),
-          updatedAt: now,
-        });
-        if (lockRef) {
-          if (lockSnap && lockSnap.exists()) {
-            const heldPeople = Number((lockSnap.data() as any)?.heldPeople ?? 0);
-            tx.update(lockRef, { heldPeople: Math.max(0, Math.floor(heldPeople - people)), updatedAt: now });
-          } else {
-            tx.set(lockRef, { packageId, date, heldPeople: 0, createdAt: now, updatedAt: now });
-          }
-        }
-      }
 
       if (!emailClienteConfirmSnap.exists()) {
         tx.set(emailClienteConfirmRef, {

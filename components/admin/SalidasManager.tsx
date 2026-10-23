@@ -24,7 +24,6 @@ const EMPTY_DRAFT: Draft = {
   ciudadSalida: '',
   precio: 0,
   moneda: 'ARS',
-  cupo: undefined,
   observaciones: '',
 };
 
@@ -51,7 +50,6 @@ function makeSalida(draft: Draft, fecha: string, id?: string): Salida {
     ciudadSalida: draft.ciudadSalida.trim(),
     precio: Number(draft.precio) || 0,
     moneda: draft.moneda,
-    ...(draft.cupo && draft.cupo > 0 ? { cupo: Math.floor(draft.cupo) } : {}),
     observaciones: draft.observaciones?.trim() || '',
   };
 }
@@ -148,7 +146,6 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
       ciudadSalida: salida.ciudadSalida || '',
       precio: Number(salida.precio) || 0,
       moneda: salida.moneda,
-      cupo: salida.cupo,
       observaciones: salida.observaciones || '',
     });
   };
@@ -214,7 +211,7 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
             <div className="mt-4 space-y-3">
               <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="salidas-desde" className="text-xs">Desde</Label><Input id="salidas-desde" type="date" min={today} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} className="mt-1 bg-white" /></div><div><Label htmlFor="salidas-hasta" className="text-xs">Hasta</Label><Input id="salidas-hasta" type="date" min={rangeStart || today} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} className="mt-1 bg-white" /></div></div>
               <div><Label htmlFor="salidas-precio" className="text-xs">Precio por persona</Label><FormattedAmountInput id="salidas-precio" value={draft.precio} onChange={(value) => setDraft((prev) => ({ ...prev, precio: value }))} className="mt-1 bg-white" /></div>
-              <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="salidas-moneda" className="text-xs">Moneda</Label><Select value={draft.moneda} onValueChange={(value: Draft['moneda']) => setDraft((prev) => ({ ...prev, moneda: value }))}><SelectTrigger id="salidas-moneda" className="mt-1 bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ARS">ARS</SelectItem><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem></SelectContent></Select></div><div><Label htmlFor="salidas-cupo" className="text-xs">Cupo</Label><Input id="salidas-cupo" type="number" min={1} value={draft.cupo || ''} onChange={(event) => setDraft((prev) => ({ ...prev, cupo: event.target.value ? Number(event.target.value) : undefined }))} className="mt-1 bg-white" placeholder="Opcional" /></div></div>
+              <div><Label htmlFor="salidas-moneda" className="text-xs">Moneda</Label><Select value={draft.moneda} onValueChange={(value: Draft['moneda']) => setDraft((prev) => ({ ...prev, moneda: value }))}><SelectTrigger id="salidas-moneda" className="mt-1 bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ARS">ARS</SelectItem><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem></SelectContent></Select></div>
               <div><Label htmlFor="salidas-ciudad" className="text-xs">Ciudad de salida</Label><Input id="salidas-ciudad" value={draft.ciudadSalida} onChange={(event) => setDraft((prev) => ({ ...prev, ciudadSalida: event.target.value }))} className="mt-1 bg-white" placeholder="Opcional" /></div>
               <Button type="button" onClick={addRange} className="w-full"><Plus className="mr-2 h-4 w-4" />Agregar fechas</Button>
             </div>
@@ -223,7 +220,7 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
       ) : (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div className="flex items-center justify-between"><p className="text-sm font-semibold text-gray-900">Editar salida · {formatDate(draft.fecha, true)}</p><Button type="button" variant="ghost" size="icon" onClick={resetEditor} aria-label="Cancelar edición"><X className="h-4 w-4" /></Button></div>
-          <div className="mt-4 grid gap-3 md:grid-cols-4"><div><Label htmlFor="edit-fecha" className="text-xs">Ida</Label><Input id="edit-fecha" type="date" min={today} value={draft.fecha} onChange={(event) => setDraft((prev) => ({ ...prev, fecha: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-vuelta" className="text-xs">Vuelta</Label><Input id="edit-vuelta" type="date" min={draft.fecha || today} value={draft.fechaVuelta} onChange={(event) => setDraft((prev) => ({ ...prev, fechaVuelta: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-precio" className="text-xs">Precio</Label><FormattedAmountInput id="edit-precio" value={draft.precio} onChange={(value) => setDraft((prev) => ({ ...prev, precio: value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-cupo" className="text-xs">Cupo</Label><Input id="edit-cupo" type="number" min={1} value={draft.cupo || ''} onChange={(event) => setDraft((prev) => ({ ...prev, cupo: event.target.value ? Number(event.target.value) : undefined }))} className="mt-1 bg-white" /></div></div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3"><div><Label htmlFor="edit-fecha" className="text-xs">Ida</Label><Input id="edit-fecha" type="date" min={today} value={draft.fecha} onChange={(event) => setDraft((prev) => ({ ...prev, fecha: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-vuelta" className="text-xs">Vuelta</Label><Input id="edit-vuelta" type="date" min={draft.fecha || today} value={draft.fechaVuelta} onChange={(event) => setDraft((prev) => ({ ...prev, fechaVuelta: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-precio" className="text-xs">Precio</Label><FormattedAmountInput id="edit-precio" value={draft.precio} onChange={(value) => setDraft((prev) => ({ ...prev, precio: value }))} className="mt-1 bg-white" /></div></div>
           <div className="mt-3 grid gap-3 md:grid-cols-2"><div><Label htmlFor="edit-ciudad" className="text-xs">Ciudad de salida</Label><Input id="edit-ciudad" value={draft.ciudadSalida} onChange={(event) => setDraft((prev) => ({ ...prev, ciudadSalida: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-observaciones" className="text-xs">Observaciones</Label><Textarea id="edit-observaciones" value={draft.observaciones} onChange={(event) => setDraft((prev) => ({ ...prev, observaciones: event.target.value }))} className="mt-1 bg-white" rows={1} /></div></div>
           <div className="mt-3 flex justify-end"><Button type="button" onClick={saveEdit}>Guardar cambios</Button></div>
         </div>
@@ -278,7 +275,6 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
                       <span className="font-medium text-gray-700">{salida.moneda} {Number(salida.precio || 0).toLocaleString('es-AR')}</span>
-                      {salida.cupo ? <span>{salida.cupo} cupos</span> : null}
                       {salida.ciudadSalida ? <span className="truncate">{salida.ciudadSalida}</span> : null}
                     </div>
                   </div>

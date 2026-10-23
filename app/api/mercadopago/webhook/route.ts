@@ -189,14 +189,6 @@ function computeVoucherNextAttemptAt(params: {
   return Timestamp.fromMillis(dueMs);
 }
 
-function getBaseCapacityForDate(
-  paquete: Awaited<ReturnType<typeof getPaqueteById>> | null,
-  date: string
-): number {
-  if (!paquete) return 0;
-  return resolveDepartureConfig(paquete, date).baseCapacity;
-}
-
 /**
  * Envía un email con Resend si está configurado. Devuelve el id del proveedor
  * o null cuando no se pudo enviar (para que el job quede pendiente y el cron
@@ -745,7 +737,6 @@ export async function POST(request: Request) {
 
             const pkg = pkgs.get(packageId) ?? null;
             const finalPackageTitle = packageTitle || pkg?.titulo || '';
-            const baseCapacity = getBaseCapacityForDate(pkg, date);
 
             const peopleLabel = people === 1 ? '1 persona' : `${people} personas`;
             const amountFormatted = formatAmount(amountTotalItem || (paymentInfo.transaction_amount ? Math.round(paymentInfo.transaction_amount * 100) : 0), currency);
@@ -760,7 +751,6 @@ export async function POST(request: Request) {
 
             const reservationId = orderId ? `ord_${orderId}_${cartItemId}` : `mp_${paymentId}_${cartItemId}`;
             const reservaRef = doc(db, 'reservas', reservationId);
-            const stockRef = doc(db, 'stockMovimientos', orderId ? `ord_${orderId}_${cartItemId}` : `mp_${reservationId}`);
             const emailClienteConfirmRef = doc(
               db,
               'emailJobs',
@@ -775,7 +765,6 @@ export async function POST(request: Request) {
             const paymentRef = doc(collection(db, 'reservas', reservationId, 'payments'), String(paymentId));
 
             const reservaSnap = await tx.get(reservaRef);
-            const stockSnap = await tx.get(stockRef);
             const emailClienteConfirmSnap = await tx.get(emailClienteConfirmRef);
             const emailClienteVoucherSnap = await tx.get(emailClienteVoucherRef);
             const emailAdminSnap = await tx.get(emailAdminRef);
@@ -931,7 +920,6 @@ export async function POST(request: Request) {
                 }),
                 capacitySnapshot: {
                   date,
-                  baseCapacity,
                   maxPeoplePerBooking: pkg ? resolveDepartureConfig(pkg, date).maxPeople : null,
                   hasSpecificDates: Boolean(pkg?.salidas?.length),
                   enabled: pkg ? resolveDepartureConfig(pkg, date).enabled : false,
@@ -1106,20 +1094,6 @@ export async function POST(request: Request) {
               );
             }
 
-            if (!stockSnap.exists() && date && isApproved) {
-              queueSet(stockRef, {
-                packageId,
-                date,
-                type: 'reserva',
-                quantity: -people,
-                author: 'system',
-                referenceId: String(paymentId),
-                note: `Reserva Mercado Pago (pago confirmado)`,
-                baseCapacityAtThatTime: baseCapacity,
-                createdAt: now,
-              });
-            }
-
             if (holdId && date) {
               const holdRef = doc(db, 'reservationHolds', holdId);
               const cartItemRef = doc(db, 'carts', String(cartId), 'items', cartItemId);
@@ -1128,21 +1102,8 @@ export async function POST(request: Request) {
                 const cartItemSnap = await tx.get(cartItemRef);
                 const holdData: any = holdSnap.exists() ? holdSnap.data() : null;
                 const cartItemData: any = cartItemSnap.exists() ? cartItemSnap.data() : null;
-                const holdWasActive = String(holdData?.status ?? '') === 'active';
-                const cartItemWasActive = String(cartItemData?.holdStatus ?? '') === 'active';
                 if (holdSnap.exists()) queueUpdate(holdRef, { status: 'consumed', consumedAt: now, updatedAt: now });
                 if (cartItemSnap.exists()) queueUpdate(cartItemRef, { holdStatus: 'consumed', updatedAt: now });
-                if (date !== 'sin-fecha' && (holdWasActive || cartItemWasActive)) {
-                  const lockRef = doc(db, 'stockHolds', `${packageId}_${date}`);
-                  const lockSnap = await tx.get(lockRef);
-                  const heldPeople = lockSnap.exists() ? Number((lockSnap.data() as any)?.heldPeople ?? 0) : 0;
-                  if (!lockSnap.exists()) {
-                    queueSet(lockRef, { packageId, date, heldPeople: 0, updatedAt: now, createdAt: now });
-                  } else {
-                    queueUpdate(lockRef, { heldPeople: Math.max(0, heldPeople - people), updatedAt: now });
-                  }
-                }
-
                 const seatLabels = Array.isArray(cartItemData?.selectedSeats) && cartItemData.selectedSeats.length
                   ? cartItemData.selectedSeats.map((s: any) => String(s))
                   : Array.isArray(holdData?.selectedSeats) && holdData.selectedSeats.length
@@ -1196,17 +1157,6 @@ export async function POST(request: Request) {
                 const cartItemSnap = await tx.get(cartItemRef);
                 if (holdSnap.exists()) queueUpdate(holdRef, { status: 'released', releasedAt: now, updatedAt: now });
                 if (cartItemSnap.exists()) queueUpdate(cartItemRef, { holdStatus: 'released', updatedAt: now });
-                if (date !== 'sin-fecha') {
-                  const lockRef = doc(db, 'stockHolds', `${packageId}_${date}`);
-                  const lockSnap = await tx.get(lockRef);
-                  const heldPeople = lockSnap.exists() ? Number((lockSnap.data() as any)?.heldPeople ?? 0) : 0;
-                  if (!lockSnap.exists()) {
-                    queueSet(lockRef, { packageId, date, heldPeople: 0, updatedAt: now, createdAt: now });
-                  } else {
-                    queueUpdate(lockRef, { heldPeople: Math.max(0, heldPeople - people), updatedAt: now });
-                  }
-                }
-
                 const holdData: any = holdSnap.exists() ? holdSnap.data() : null;
                 const cartItemData: any = cartItemSnap.exists() ? cartItemSnap.data() : null;
                 const seatLabels = Array.isArray(cartItemData?.selectedSeats) && cartItemData.selectedSeats.length
@@ -1342,7 +1292,6 @@ export async function POST(request: Request) {
     const packageId = intentData.packageId || intentData.experienceId;
     const packageSlug = intentData.packageSlug || intentData.experienceSlug;
     const packageTitle = intentData.packageTitle || intentData.experienceTitle || intentData.intentTitle;
-    const holdId = typeof (intentData as any)?.holdId === 'string' ? String((intentData as any).holdId).trim() : '';
     const {
       date,
       people,
@@ -1362,12 +1311,10 @@ export async function POST(request: Request) {
     // Obtener datos actualizados del paquete
     const pkg = packageId ? await getPaqueteById(packageId) : null;
     const finalPackageTitle = packageTitle ?? pkg?.titulo ?? '';
-    const baseCapacity = getBaseCapacityForDate(pkg, date);
 
     // Determinar estado de la reserva
     const reservationStatus = mapPaymentStatusToReservationStatus(paymentStatus);
     const isPixPending = paymentStatus === 'pending' || paymentStatus === 'in_process';
-    const shouldReleaseHold = !isApproved && !isPixPending;
 
     // Datos del pagador (del pago de MP)
     const payer = paymentInfo.payer;
@@ -1442,7 +1389,6 @@ export async function POST(request: Request) {
     try {
       const now = Timestamp.now();
       const reservaRef = doc(db, 'reservas', reservationId);
-      const stockRef = doc(db, 'stockMovimientos', `mp_${reservationId}`);
       const emailClienteConfirmRef = doc(db, 'emailJobs', `mp_${reservationId}_cliente_confirm`);
       const emailClienteVoucherRef = doc(db, 'emailJobs', `mp_${reservationId}_cliente_voucher`);
       const emailAdminRef = doc(db, 'emailJobs', `mp_${reservationId}_admin`);
@@ -1452,28 +1398,9 @@ export async function POST(request: Request) {
         // FASE 1: TODAS LAS LECTURAS
         // ============================================
         const reservaSnap = await tx.get(reservaRef);
-        const stockSnap = await tx.get(stockRef);
         const emailClienteConfirmSnap = await tx.get(emailClienteConfirmRef);
         const emailClienteVoucherSnap = await tx.get(emailClienteVoucherRef);
         const emailAdminSnap = await tx.get(emailAdminRef);
-
-        // Lectura de hold y lock (debe ser antes de todas las escrituras)
-        let holdSnap: any = null;
-        let lockSnap: any = null;
-        let lockRef: any = null;
-        let holdWasActive = false;
-        if (holdId && packageId && date && date !== 'sin-fecha') {
-          const holdRef = doc(db, 'reservationHolds', holdId);
-          holdSnap = await tx.get(holdRef);
-          if (holdSnap.exists()) {
-            const holdData: any = holdSnap.data();
-            holdWasActive = String(holdData?.status ?? '') === 'active';
-            if (holdWasActive && (isApproved || shouldReleaseHold)) {
-              lockRef = doc(db, 'stockHolds', `${packageId}_${date}`);
-              lockSnap = await tx.get(lockRef);
-            }
-          }
-        }
 
         const nextAttemptAtVoucher = computeVoucherNextAttemptAt({ date, now });
         const shouldQueueVoucher = Boolean(date && date !== 'sin-fecha');
@@ -1592,7 +1519,6 @@ export async function POST(request: Request) {
             }),
             capacitySnapshot: {
               date,
-              baseCapacity,
               maxPeoplePerBooking: pkg ? resolveDepartureConfig(pkg, date).maxPeople : null,
               hasSpecificDates: Boolean(pkg?.salidas?.length),
               enabled: pkg ? resolveDepartureConfig(pkg, date).enabled : false,
@@ -1672,38 +1598,6 @@ export async function POST(request: Request) {
           });
         }
 
-        // Movimiento de stock (solo si está aprobado)
-        if (!stockSnap.exists() && date && isApproved) {
-          tx.set(stockRef, {
-            packageId,
-            date,
-            type: 'reserva',
-            quantity: -people,
-            author: 'system',
-            referenceId: String(paymentId),
-            note: `Reserva Mercado Pago (pago confirmado)`,
-            baseCapacityAtThatTime: baseCapacity,
-            createdAt: now,
-          });
-        }
-
-        // Actualizar hold y lock
-        if (holdWasActive && (isApproved || shouldReleaseHold)) {
-          const holdRef = doc(db, 'reservationHolds', holdId);
-          if (isApproved) {
-            tx.update(holdRef, { status: 'consumed', consumedAt: now, paymentId: String(paymentId), updatedAt: now });
-          } else if (shouldReleaseHold) {
-            tx.update(holdRef, { status: 'released', releasedAt: now, paymentId: String(paymentId), updatedAt: now });
-          }
-
-          if (lockSnap && lockSnap.exists()) {
-            const heldPeople = Number((lockSnap.data() as any)?.heldPeople ?? 0);
-            tx.update(lockRef, { heldPeople: Math.max(0, Math.floor(heldPeople - people)), updatedAt: now });
-          } else {
-            tx.set(lockRef, { packageId, date, heldPeople: 0, createdAt: now, updatedAt: now });
-          }
-        }
-
         // Email al cliente (solo si aprobado). Si el envío inmediato
         // funcionó, el job nace como "sent"; si no, "pending" para el cron.
         if (!emailClienteConfirmSnap.exists() && customerEmail && isApproved) {
@@ -1775,7 +1669,6 @@ export async function POST(request: Request) {
 
         return {
           hadReserva: reservaSnap.exists(),
-          hadStock: stockSnap.exists(),
           hadEmailCliente: emailClienteConfirmSnap.exists(),
           hadEmailAdmin: emailAdminSnap.exists(),
         };

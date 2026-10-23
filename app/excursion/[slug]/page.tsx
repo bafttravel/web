@@ -20,7 +20,6 @@ import { serializeFirestoreData } from '@/lib/utils/serialize';
 import { getPaqueteBySlug } from '@/lib/paquetes';
 import { getOperationalSalidas, resolveDepartureConfig } from '@/lib/packages/resolve-departure';
 import { getPrimaryPackageCategoryId } from '@/lib/packages/category-utils';
-import { getAvailableForPackageDate } from '@/lib/cart/server';
 import { sanitizePackageRichHtml } from '@/lib/packages/rich-text-sanitize';
 import { extractPlainTextFromRichText } from '@/lib/packages/rich-text-validation';
 import { buildPageTitle } from '@/lib/siteConfig';
@@ -208,17 +207,7 @@ export default async function ExcursionPage({ params }: { params: Promise<{ slug
   const destino = paquete.destino || paquete.eventoLugar || 'Argentina';
   const locationText = paquete.eventoLugar || paquete.destino || destino;
   const longDescriptionHtml = sanitizePackageRichHtml(paquete.descripcionLarga || paquete.descripcion);
-  const bookingDates = await Promise.all(
-    getOperationalSalidas(paquete).map(async (salida) => {
-      const resolved = resolveDepartureConfig(paquete, salida.fecha);
-      const available = await getAvailableForPackageDate(paquete, salida.fecha);
-      return {
-        date: salida.fecha,
-        available,
-        capacity: resolved.baseCapacity,
-      };
-    })
-  );
+  const bookingDates = getOperationalSalidas(paquete).map((salida) => ({ date: salida.fecha }));
 
   return (
     <div className="min-h-screen bg-[#F5FAFF]">

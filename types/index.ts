@@ -117,7 +117,8 @@ export interface PaqueteBookingConfig {
   }>;
   dates?: Array<{
     date: string;
-    capacity: number;
+    /** Legacy field; ignored by booking availability. */
+    capacity?: number;
     enabled: boolean;
     price?: number;
     seatSelectionEnabled?: boolean;

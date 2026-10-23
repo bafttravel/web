@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import PaqueteSidebar from '@/components/PaqueteSidebar';
 import type { Paquete } from '@/types';
 import type { BookingAvailabilityItem } from '@/lib/packages/booking-calendar';
@@ -59,16 +60,17 @@ function buildMockAvailability(): BookingAvailabilityItem[] {
   const pad = (n: number) => String(n).padStart(2, '0');
   const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const d1 = new Date(today);
-  d1.setDate(d1.getDate() + 2);
+  d1.setDate(d1.getDate() + 10);
   const d2 = new Date(today);
-  d2.setDate(d2.getDate() + 4);
+  d2.setDate(d2.getDate() + 12);
   return [
-    { date: iso(d1), capacity: 10, available: 2 },
-    { date: iso(d2), capacity: 10, available: 6 },
+    { date: iso(d1) },
+    { date: iso(d2) },
   ];
 }
 
 export default async function BookingE2EPage({ searchParams }: { searchParams: SearchParams }) {
+  if (process.env.NODE_ENV === 'production') notFound();
   const params = await searchParams;
   const mode = String(params.mode ?? '').trim();
   const hasDates = mode === 'dates';

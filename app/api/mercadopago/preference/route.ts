@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createPreference, getCheckoutUrl, mercadopagoEnabled } from '@/lib/mercadopago';
 import { getPaqueteBySlug, getPaqueteById } from '@/lib/paquetes';
-import { collection, doc, getDoc, getDocs, orderBy, query, runTransaction, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { addMinutes, computeBaseCapacity, getAvailableForPackageDate, getHeldPeople, getHoldMinutes, getStockDelta, toMillis } from '@/lib/cart/server';
+import { toMillis } from '@/lib/cart/server';
 import { orderExternalReference } from '@/lib/orders';
 import { getSeatDepartureId, seatIdsFromLabels } from '@/lib/seats/server';
 import type { SeatLayoutTemplate } from '@/types';
@@ -268,6 +268,12 @@ export async function POST(request: Request) {
     failureUrl: bodyFailureUrl,
     pendingUrl: bodyPendingUrl,
   } = parsed.data;
+  if (cartId) {
+    return NextResponse.json(
+      { error: 'El flujo de carrito está desactivado. Reservá directamente desde la excursión.', code: 'LEGACY_CART_DISABLED' },
+      { status: 410 }
+    );
+  }
   const referralCode = parsed.data.referralCode?.trim() || undefined;
   const paymentMethod = parsed.data.paymentMethod;
   if (!cartId) {
@@ -537,17 +543,6 @@ export async function POST(request: Request) {
             if (!(exp > 0 && exp > Date.now())) {
               return NextResponse.json({ error: 'Una o más butacas vencieron. Volvé al carrito para actualizar.' }, { status: 400 });
             }
-          }
-        }
-      }
-
-      if (!isNoDate) {
-        const baseCapacity = computeBaseCapacity(pkg, date);
-        if (baseCapacity > 0) {
-          const delta = await getStockDelta(pkg.id, date);
-          const held = await getHeldPeople(pkg.id, date);
-          if (baseCapacity + delta - held < 0) {
-            return NextResponse.json({ error: 'El cupo cambió y el carrito quedó inválido. Volvé al carrito para actualizar.' }, { status: 400 });
           }
         }
       }
@@ -876,7 +871,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No corresponde cargar acompañantes para esta compra.' }, { status: 400 });
   }
 
-  // Validar cupos disponibles
   if (date !== 'sin-fecha') {
     if (!departureConfig.exists) {
       return NextResponse.json({ error: 'La salida seleccionada no existe.' }, { status: 400 });
@@ -887,13 +881,6 @@ export async function POST(request: Request) {
     const leadError = leadTimeError(paquete, date);
     if (leadError) {
       return NextResponse.json({ error: leadError }, { status: 400 });
-    }
-    const available = await getAvailableForPackageDate(paquete, date);
-    if (people > available) {
-      return NextResponse.json(
-        { error: 'No hay cupo suficiente para esa fecha. Actualizá la página y elegí otra fecha o menos personas.' },
-        { status: 400 }
-      );
     }
   }
 
@@ -970,63 +957,9 @@ export async function POST(request: Request) {
     }
   );
 
-  // Registrar intento de checkout + hold de cupo (si aplica)
+  // Registrar intento de checkout. La disponibilidad no se limita por cupos.
   const now = Timestamp.now();
   const externalReference = `pkg-${paquete.id}-${Date.now()}`;
-  let holdId: string | null = null;
-  let holdExpiresAt: Timestamp | null = null;
-
-  if (date !== 'sin-fecha') {
-    const holdRef = doc(collection(db, 'reservationHolds'));
-    holdId = holdRef.id;
-    holdExpiresAt = addMinutes(now, getHoldMinutes());
-    const lockRef = doc(db, 'stockHolds', `${paquete.id}_${date}`);
-    const baseCapacity = computeBaseCapacity(paquete, date);
-    const delta = await getStockDelta(paquete.id, date);
-
-    const ok = await runTransaction(db, async (tx) => {
-      const lockSnap = await tx.get(lockRef);
-      const heldPeople = lockSnap.exists() ? Math.max(0, Number((lockSnap.data() as any)?.heldPeople ?? 0) || 0) : 0;
-      const remaining = Math.max(0, baseCapacity + delta - heldPeople);
-      if (people > remaining) return false;
-
-      tx.set(
-        holdRef,
-        {
-          status: 'active',
-          source: 'direct_checkout',
-          packageId: paquete.id,
-          packageSlug: paquete.slug,
-          date,
-          people,
-          peopleAdults,
-          peopleMinors,
-          ...(breakdown ? { peopleBreakdown: breakdown } : {}),
-          checkoutIntentId: intentId,
-          externalReference,
-          expiresAt: holdExpiresAt,
-          createdAt: now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-
-      if (!lockSnap.exists()) {
-        tx.set(lockRef, { packageId: paquete.id, date, heldPeople: people, createdAt: now, updatedAt: now });
-      } else {
-        tx.update(lockRef, { heldPeople: heldPeople + people, updatedAt: now });
-      }
-
-      return true;
-    });
-
-    if (!ok) {
-      return NextResponse.json(
-        { error: 'El cupo cambió. Actualizá y elegí otra fecha o menos personas.' },
-        { status: 400 }
-      );
-    }
-  }
 
   await setDoc(intentRef, {
     status: 'created',
@@ -1039,8 +972,6 @@ export async function POST(request: Request) {
     peopleAdults,
     peopleMinors,
     ...(breakdown ? { peopleBreakdown: breakdown } : {}),
-    holdId,
-    holdExpiresAt,
     unitPrice,
     selectedExtras: directSelectedExtras.length ? directSelectedExtras : null,
     addonIds: Array.isArray((parsed.data as any).addonIds)

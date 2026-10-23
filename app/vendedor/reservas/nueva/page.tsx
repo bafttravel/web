@@ -68,7 +68,6 @@ function NuevaReserva() {
           hideReferral
           hideVendorSelect
           hideStatus
-          hideOverbook
           apiEndpoint="/api/vendor/reservas"
           successRedirect="/vendedor/reservas/:id"
         />

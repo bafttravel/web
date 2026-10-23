@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 const bookingDateSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD'),
-  capacity: z.number().int().min(0),
   enabled: z.boolean(),
 });
 
@@ -50,12 +49,6 @@ export const bookingConfigSchema = z
       return new Set(dates).size === dates.length;
     },
     { message: 'No se permiten fechas duplicadas', path: ['dates'] }
-  )
-  .refine(
-    (data) => {
-      return data.dates.every((d) => !d.enabled || d.capacity >= 1);
-    },
-    { message: 'Capacity mínimo 1 si la fecha está habilitada', path: ['dates'] }
   )
   .refine(
     (data) => {

@@ -13,7 +13,6 @@ import { getWhatsAppLink } from '@/lib/utils/whatsapp';
 import {
   buildBookingCalendarMonth,
   filterAvailabilityToBookingWindow,
-  getMaxSelectablePeople,
   type BookingAvailabilityItem,
 } from '@/lib/packages/booking-calendar';
 import { getPackageAddonOptions } from '@/lib/packages/resolve-departure';
@@ -107,7 +106,10 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
   const destino = paquete.destino || paquete.eventoLugar || '-';
   const duracion = paquete.duracion || '-';
   const bookingEnabled = paquete.bookingConfig?.enabled !== false;
-  const maxPeoplePerBooking = paquete.bookingConfig?.maxPeoplePerBooking ?? paquete.capacidadMaxima ?? 6;
+  const maxPeoplePerBooking = Math.max(
+    1,
+    Math.min(50, Math.floor(Number(paquete.bookingConfig?.maxPeoplePerBooking ?? paquete.capacidadMaxima ?? 6) || 6))
+  );
   const defaultAdultsLabel = s('defaultAdults');
   const defaultMinorsLabel = s('defaultMinors');
   const peopleCategories: PeopleCategoryConfig[] = useMemo(
@@ -166,14 +168,11 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
   );
 
   const visibleBookingDates = useMemo(
-    () => filterAvailabilityToBookingWindow(bookingDates, baseDate).sort((a, b) => a.date.localeCompare(b.date)),
+    () => filterAvailabilityToBookingWindow(bookingDates, baseDate),
     [baseDate, bookingDates]
   );
 
-  const bookableBookingDates = useMemo(
-    () => visibleBookingDates.filter((item) => item.available >= people),
-    [people, visibleBookingDates]
-  );
+  const bookableBookingDates = visibleBookingDates;
 
   const selectedAvailability = useMemo(
     () => visibleBookingDates.find((item) => item.date === selectedDate) ?? null,
@@ -256,7 +255,7 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
     return () => document.removeEventListener('click', handler);
   }, [tooltipInfo.visible]);
 
-  const maxSelectablePeopleForDate = getMaxSelectablePeople(selectedAvailability?.available ?? 0, maxPeoplePerBooking);
+  const maxSelectablePeopleForDate = maxPeoplePerBooking;
 
   useEffect(() => {
     const safeMax = Math.max(1, Math.floor(Number(maxPeoplePerBooking) || 1));
@@ -685,7 +684,6 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                                     year: activeMonth.year,
                                     month: activeMonth.month,
                                     entries: visibleBookingDates,
-                                    requiredPeople: people,
                                     minBookableDateIso: firstBookableDateIso,
                                   }).map((cell) => {
                                     const isSelected = selectedDate === cell.isoDate;
@@ -739,7 +737,7 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                                             ? 'scale-105 bg-neutral-900 text-white shadow-[0_8px_20px_-8px_rgba(0,0,0,0.5)]'
                                             : 'bg-neutral-100 text-neutral-800 hover:bg-neutral-900 hover:text-white'
                                             }`}
-                                          aria-label={`${s('select')} ${formatDateLabel(cell.isoDate, locale)}. ${s('spotsAvailable', { count: cell.available })}.`}
+                                          aria-label={`${s('select')} ${formatDateLabel(cell.isoDate, locale)}.`}
                                           aria-pressed={isSelected}
                                         >
                                           {dayContent}
@@ -751,18 +749,11 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                                     return (
                                       <div
                                         key={cell.isoDate}
-                                        className={`${sharedClasses} ${cell.isSoldOut
-                                          ? 'text-neutral-300 line-through'
-                                          : cell.isTooSoon
-                                            ? 'text-amber-500/60'
-                                            : 'text-neutral-200'
-                                          }`}
+                                        className={`${sharedClasses} ${cell.isTooSoon ? 'text-amber-500/60' : 'text-neutral-200'}`}
                                         aria-label={
-                                          cell.isSoldOut
-                                            ? s('soldOut', { day: cell.day })
-                                            : cell.isTooSoon
-                                              ? s('outsideLeadTime', { day: cell.day, hours: minLeadHours })
-                                              : s('noDeparture', { day: cell.day })
+                                          cell.isTooSoon
+                                            ? s('outsideLeadTime', { day: cell.day, hours: minLeadHours })
+                                            : s('noDeparture', { day: cell.day })
                                         }
                                       >
                                         {dayContent}

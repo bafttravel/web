@@ -47,8 +47,6 @@ function normalizeFetchedPackage(paquete: Paquete, categorias: Categoria[]): Paq
 
 export type BookingDate = {
   date: string; // YYYY-MM-DD
-  capacity: number;
-  available: number;
   enabled: boolean;
 };
 
@@ -139,24 +137,21 @@ export async function getPaquetesByCategoria(categoriaId: string): Promise<Paque
 
 /**
  * Convertir un Paquete a datos de booking públicos
- * Calcular available = capacity - reservas existentes
+ * Las fechas cargadas permanecen reservables; el único límite de personas es por reserva.
  */
 export function toBookingPublicData(
   paquete: PackageWithBooking,
-  reservedByDate: Record<string, number>
+  _reservedByDate: Record<string, number>
 ): BookingPublicData {
   const bc = paquete.bookingConfig;
   const enabled = bc?.enabled !== false;
   const operationalSalidas = getOperationalSalidas(paquete);
+  const maxPeoplePerBooking = resolveDepartureConfig(paquete, operationalSalidas[0]?.fecha || 'sin-fecha').maxPeople;
 
   const dates: BookingDate[] = operationalSalidas.map((salida) => {
     const resolved = resolveDepartureConfig(paquete, salida.fecha);
-    const capacity = Math.max(0, resolved.baseCapacity || 0);
-    const reserved = reservedByDate[salida.fecha] || 0;
     return {
       date: salida.fecha,
-      capacity,
-      available: Math.max(0, capacity - reserved),
       enabled: resolved.enabled,
     };
   });
@@ -168,19 +163,10 @@ export function toBookingPublicData(
     subtitle2: '',
     hasSpecificDates: dates.length > 0,
     dates: dates.filter((d) => d.enabled),
-    maxPeoplePerBooking: resolveDepartureConfig(paquete, operationalSalidas[0]?.fecha || 'sin-fecha').maxPeople,
+    maxPeoplePerBooking,
     currency: String(resolveDepartureConfig(paquete, operationalSalidas[0]?.fecha || 'sin-fecha').currency || 'ars').toLowerCase(),
     depositAmount: typeof bc?.depositAmount === 'number' ? bc.depositAmount : null,
   };
-}
-
-/** Obtener capacidad base para una fecha específica */
-export function getBaseCapacityForDate(
-  paquete: PackageWithBooking | null,
-  date: string
-): number {
-  if (!paquete) return 0;
-  return resolveDepartureConfig(paquete, date).baseCapacity;
 }
 
 /** Verificar si un paquete tiene reservas habilitadas */
