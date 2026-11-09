@@ -77,6 +77,8 @@ export async function DELETE(request: Request) {
       );
     }
 
+    if (key.startsWith('comprobantes/')) return NextResponse.json({ error: 'Los comprobantes contables no se eliminan' }, { status: 403 });
+
     const client = getR2Client();
     await client.send(
       new DeleteObjectCommand({

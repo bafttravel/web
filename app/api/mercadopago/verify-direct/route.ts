@@ -609,6 +609,7 @@ export async function POST(request: Request) {
     }).catch(() => {});
   }
 
+  await import('@/lib/operations/lifecycle').then(({ prepareReservationOperations }) => prepareReservationOperations(reservationId)).catch((error) => console.error('[operaciones]', error));
   return NextResponse.json({
     ok: true,
     reservationId,

@@ -13,6 +13,18 @@ const r2HostnameFromBaseUrl = (() => {
 })();
 
 const nextConfig: NextConfig = {
+  // Isolate visual tests from an already-running developer workspace.
+  distDir: process.env.ADMIN_DESIGN_PREVIEW === '1' ? '.next-admin-design' : '.next',
+  ...(process.env.ADMIN_DESIGN_PREVIEW === '1' ? { devIndicators: false as const } : {}),
+  outputFileTracingIncludes: {
+    '/api/admin/reservas/*/voucher': ['./public/images/logo.png'],
+    '/api/cron/email': ['./public/images/logo.png'],
+    '/api/cron/emails': ['./public/images/logo.png'],
+    '/api/admin/emails': ['./public/images/logo.png'],
+    '/api/admin/reservas': ['./public/images/logo.png'],
+    '/api/admin/ventas': ['./public/images/logo.png'],
+    '/api/admin/finanzas': ['./ejemplos/*.xlsx'],
+  },
   images: {
     remotePatterns: [
       {
@@ -37,7 +49,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '10mb',
     },
     // Optimizar compilación para navegadores modernos
-    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons', '@phosphor-icons/react'],
   },
   // Configuración de transpilación para reducir JavaScript antiguo
   transpilePackages: [],

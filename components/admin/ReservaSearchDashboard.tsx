@@ -1,4 +1,6 @@
 'use client';
+import AdminDatePicker from './AdminDatePicker';
+import { adminDateLabel } from '@/lib/admin/dates';
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -33,12 +35,7 @@ type ResultItem = {
 };
 
 function formatDateLabel(date: string) {
-  if (!date || date === 'sin-fecha') return 'sin fecha';
-  try {
-    return new Date(`${date}T12:00:00`).toLocaleDateString('es-AR');
-  } catch {
-    return date;
-  }
+  return date === 'sin-fecha' ? 'A coordinar' : adminDateLabel(date);
 }
 
 function formatAmount(amountTotal: number | undefined, currency: string | undefined) {
@@ -149,7 +146,7 @@ export default function ReservaSearchDashboard({ paquetes }: { paquetes: Paquete
             </div>
             <div className="space-y-1">
               <Label>Salida</Label>
-              <Input value={date} onChange={(e) => setDate(e.target.value)} type="date" />
+              <AdminDatePicker aria-label="Fecha de excursión" value={date} onValueChange={setDate} />
             </div>
             <div className="space-y-1">
               <Label>Estado</Label>

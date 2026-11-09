@@ -1,4 +1,6 @@
 'use client';
+import AdminDatePicker from './AdminDatePicker';
+import { adminDateLabel } from '@/lib/admin/dates';
 
 import { useMemo, useState } from 'react';
 import { CalendarDays, Pencil, Plus, Save, Trash2 } from 'lucide-react';
@@ -31,9 +33,7 @@ const EMPTY_DRAFT: SalidaDraft = {
 };
 
 function formatShortDate(value: string) {
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value || 'Sin fecha';
-  return parsed.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return adminDateLabel(value);
 }
 
 function makeSalidaId() {
@@ -117,11 +117,10 @@ export default function PackageAvailabilityStudio({
         <CardContent className="space-y-5">
           <div>
             <Label htmlFor="fechaVencimiento">Fecha de vencimiento (opcional)</Label>
-            <Input
+            <AdminDatePicker
               id="fechaVencimiento"
-              type="date"
               value={fechaVencimiento}
-              onChange={(event) => onFechaVencimientoChange(event.target.value)}
+              onValueChange={onFechaVencimientoChange}
               className="mt-1.5"
             />
           </div>
@@ -138,11 +137,10 @@ export default function PackageAvailabilityStudio({
             <div className="grid gap-4 md:grid-cols-[1fr_180px]">
               <div>
                 <Label htmlFor="salidaFecha">Fecha *</Label>
-                <Input
+                <AdminDatePicker
                   id="salidaFecha"
-                  type="date"
                   value={draft.fecha}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, fecha: event.target.value }))}
+                  onValueChange={(fecha) => setDraft((prev) => ({ ...prev, fecha }))}
                   className="mt-1.5"
                 />
               </div>

@@ -198,6 +198,7 @@ export async function finalizeWeTravelPaidCheckout(input: {
     status: 'completed', wetravelStatus: 'paid', wetravelPaymentId: event.paymentId || null,
     wetravelBookingId: event.bookingId || null, reservationId, updatedAt: Timestamp.now(),
   });
+  await import('@/lib/operations/lifecycle').then(({ prepareReservationOperations }) => prepareReservationOperations(reservationId)).catch((error) => console.error('[wetravel] operaciones:', error));
   return result;
 }
 

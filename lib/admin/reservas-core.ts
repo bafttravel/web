@@ -1,4 +1,11 @@
 import { NextResponse } from 'next/server';
+import { reservationOperationsSchema } from '@/lib/operations/schemas';
+import { snapshotOperations } from '@/lib/operations/server';
+import { EMPTY_RESERVATION_OPERATIONS, type PackageOperations } from '@/lib/operations/types';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { prepareReservationOperations } from '@/lib/operations/lifecycle';
+import { collectorForPayment, signedPayment } from '@/lib/operations/calculations';
+import type { PaymentRecord } from '@/lib/operations/types';
 import { z } from 'zod';
 import {
   addReservaAttachments,
@@ -69,17 +76,31 @@ const paymentMovementSchema = z.object({
   currency: z.string().min(3).max(10).optional(),
   method: z.string().min(2).max(30),
   reference: z.string().max(80).optional(),
-  message: z.string().min(2).max(160),
+  message: z.string().trim().max(160).default(''),
   occurredAt: z.string().datetime().optional(),
 });
 
 const travelerSchema = z.object({
+  nationality: z.string().trim().max(80).optional(),
+  diet: z.string().trim().max(1000).optional(),
   firstName: z.string().min(2).max(80),
   lastName: z.string().min(2).max(80),
   age: z.number().int().min(0).max(120),
   birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   phone: z.string().min(8).max(40),
   document: z.string().min(3).max(40),
+  travelerType: z.enum(['adult', 'minor']).nullable().optional(),
+});
+
+const editableTravelerSchema = z.object({
+  nationality: z.string().trim().max(80).optional(),
+  diet: z.string().trim().max(1000).optional(),
+  firstName: z.string().trim().max(80).optional(),
+  lastName: z.string().trim().max(80).optional(),
+  age: z.number().int().min(0).max(120).optional(),
+  birthDate: z.string().max(10).optional(),
+  phone: z.string().trim().max(40).optional(),
+  document: z.string().trim().max(40).optional(),
   travelerType: z.enum(['adult', 'minor']).nullable().optional(),
 });
 
@@ -94,7 +115,26 @@ const manualExtraSchema = z.object({
   scope: z.enum(['per_booking', 'per_person']).optional(),
 });
 
+const addonEditSchema = z.object({
+  index: z.number().int().min(0).max(500),
+  expectedLabel: z.string().max(500),
+  expectedAmount: z.number().int().min(0),
+});
+const correctionMovementSchema = z.object({
+  paymentId: z.string().min(1).max(180),
+  movementType: z.enum(['payment', 'extra', 'discount', 'refund', 'adjustment']),
+  amount: z.number().int().positive(),
+  method: z.string().min(2).max(30),
+  reference: z.string().max(80).optional(),
+  message: z.string().trim().max(160).default(''),
+  reason: z.string().trim().min(3).max(160),
+  occurredAt: z.string().datetime().optional(),
+});
+
 const adminReservaSchema = z.object({
+  requestId: z.string().uuid().optional(),
+  operations: reservationOperationsSchema.optional(),
+  initialPayment: z.object({ method: z.enum(['pending', 'cash', 'transfer', 'card']), amount: z.number().int().min(0).optional() }).optional(),
   packageId: z.string().min(1),
   date: z.string().min(1),
   people: z.number().int().min(1).optional(),
@@ -162,8 +202,25 @@ const adminUpdateSchema = z.object({
   sendEmailNow: z.boolean().optional(),
   enqueueAdminNotificationEmail: z.boolean().optional(),
   addPaymentEvent: paymentMovementSchema.optional(),
+  correctPaymentEvent: correctionMovementSchema.optional(),
+  updateCustomer: z.object({
+    customerName: z.string().trim().min(2).max(120),
+    customerEmail: z.string().trim().email().max(200),
+    customerPhone: z.string().trim().max(40).optional(),
+    customerCountry: z.string().trim().max(80).optional(),
+    customerDocument: z.string().trim().max(40).optional(),
+    customerBirthDate: z.string().trim().max(10).optional(),
+    customerComments: z.string().trim().max(1000).optional(),
+    passengerDetails: z.array(editableTravelerSchema).max(49).optional(),
+  }).optional(),
   /** Sumar un adicional existente a una venta ya creada (edición). */
   addAddonExtra: manualExtraSchema.optional(),
+  updateAddonExtra: addonEditSchema.extend({
+    title: z.string().trim().min(1).max(120),
+    amount: z.number().int().min(0).max(99999999999),
+    scope: z.enum(['per_booking', 'per_person']),
+  }).optional(),
+  removeAddonExtra: addonEditSchema.optional(),
 });
 
 function parseDate(value: unknown): string {
@@ -579,7 +636,11 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
 
     const now = Timestamp.now();
     const status = payload.status ?? 'reserved';
-    const reservaRef = doc(collection(db, COLLECTION));
+    const packageOperationsDoc = await adminDb?.collection('packageOperations').doc(paquete.id).get();
+    const operationInput = { ...(payload.operations ?? { ...EMPTY_RESERVATION_OPERATIONS }), serviceExecuted: status === 'completed', automaticEmails: true };
+    const operations = await snapshotOperations(operationInput, packageOperationsDoc?.data() as PackageOperations | undefined);
+    if (payload.initialPayment?.amount !== undefined && payload.initialPayment.amount > repriced.subtotalAmount) return NextResponse.json({ error: 'El cobro inicial no puede superar el total de la reserva' }, { status: 400 });
+    const reservaRef = payload.requestId ? doc(db, COLLECTION, payload.requestId) : doc(collection(db, COLLECTION));
     const seatsNeeded = Boolean(seatsEnabled && seatLayoutId && payload.date !== 'sin-fecha');
     const departureId = getSeatDepartureId(paquete.id, payload.date);
     const seatResRef = doc(db, 'seatReservations', departureId);
@@ -587,6 +648,11 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
     try {
       await runTransaction(db, async (tx) => {
         // Todas las lecturas primero.
+        const existingRequest = await tx.get(reservaRef);
+        if (existingRequest.exists()) {
+          if (existingRequest.data().createdByEmail !== ctx.email) throw new Error('La solicitud ya fue utilizada');
+          return;
+        }
         const templateSnap = seatsNeeded ? await tx.get(doc(db, 'seatLayouts', seatLayoutId)) : null;
         const seatResSnap = seatsNeeded ? await tx.get(seatResRef) : null;
 
@@ -662,6 +728,8 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
         const customerDocumentNormalized = normalizeDigits(payload.customerDocument);
 
         tx.set(reservaRef, {
+          operations,
+          paymentTrackingVersion: 1,
           packageId: paquete.id,
           packageSlug: paquete.slug,
           packageTitle: paquete.titulo,
@@ -702,6 +770,7 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
           attachments: attachments.length ? attachments : [],
           status,
           createdByAdmin: true,
+          createdByEmail: ctx.email,
           ...(isVendor && ctx.vendor ? { createdByVendorId: ctx.vendor.id } : {}),
           pricingSnapshot: buildReservationPricingSnapshot({
             unitAmount: repriced.subtotalAmount > 0 && people > 0 ? Math.round(repriced.subtotalAmount / people) : unitAmount,
@@ -736,7 +805,7 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
               createdAt: now,
             },
           ],
-          paidAt: status === 'completed' ? now : null,
+          paidAt: status === 'completed' && payload.initialPayment?.method !== 'pending' && (payload.initialPayment?.amount ?? repriced.subtotalAmount) >= repriced.subtotalAmount ? now : null,
           voucherSent: false,
           voucherSentAt: null,
           emailDelivery: buildDefaultEmailDelivery(),
@@ -745,14 +814,15 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
           ...(referredBy ? { referredBy } : {}),
         });
 
-        if (status === 'reserved' || status === 'completed') {
+        if ((status === 'reserved' || status === 'completed') && payload.initialPayment?.method !== 'pending' && (payload.initialPayment?.amount ?? repriced.subtotalAmount) > 0) {
           const paymentRef = doc(collection(db, COLLECTION, reservaRef.id, 'payments'), `admin_${reservaRef.id}`);
           tx.set(
             paymentRef,
             {
-              method: 'admin',
+              method: payload.initialPayment?.method ?? 'admin',
+              collectedBy: collectorForPayment(operations.sellerHotelId, payload.initialPayment?.method ?? 'admin'),
               status: 'paid',
-              amount: repriced.subtotalAmount,
+              amount: payload.initialPayment?.amount ?? repriced.subtotalAmount,
               currency,
               message: payload.statusNote ?? (isVendor ? 'Reserva cargada por vendedor' : 'Pago registrado por admin'),
               createdAt: now,
@@ -769,7 +839,9 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
       );
     }
 
-    return NextResponse.json({ id: reservaRef.id });
+    let notificationWarning: string | undefined;
+    try { await prepareReservationOperations(reservaRef.id, true); } catch (error) { console.error('[reservas] preparación de avisos:', error); notificationWarning = 'La reserva se guardó, pero no se pudieron preparar todos los avisos automáticos.'; }
+    return NextResponse.json({ id: reservaRef.id, notificationWarning });
   } catch (error) {
     console.error('[admin/reservas] Error guardando reserva manual:', error);
     return NextResponse.json(
@@ -868,6 +940,7 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         const payoutStatus = nextPayoutStatusForReservationStatus(payload.status);
         await updateDoc(doc(db, COLLECTION, payload.reservationId), {
           'referredBy.payoutStatus': payoutStatus,
+          ...(payload.status === 'completed' ? { 'operations.serviceExecuted': true } : {}),
           updatedAt: Timestamp.now(),
         }).catch(() => null);
       }
@@ -925,6 +998,33 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         }).catch(() => null);
       }
     }
+    if (payload.updateCustomer) {
+      const customer = payload.updateCustomer;
+      const customerEmail = normalizeEmail(customer.customerEmail) ?? customer.customerEmail.trim().toLowerCase();
+      const customerName = customer.customerName.trim();
+      const now = Timestamp.now();
+      await updateDoc(doc(db, COLLECTION, payload.reservationId), {
+        customerName,
+        customerNameLower: customerName.toLowerCase(),
+        customerEmail,
+        customerEmailLower: customerEmail,
+        customerPhone: customer.customerPhone?.trim() ?? '',
+        customerPhoneNormalized: normalizeDigits(customer.customerPhone),
+        customerCountry: customer.customerCountry?.trim() ?? '',
+        customerDocument: customer.customerDocument?.trim() ?? '',
+        customerDocumentNormalized: normalizeDigits(customer.customerDocument),
+        customerBirthDate: customer.customerBirthDate?.trim() ?? '',
+        customerComments: customer.customerComments?.trim() ?? '',
+        ...(customer.passengerDetails ? { passengerDetails: customer.passengerDetails } : {}),
+        updatedAt: now,
+        statusHistory: arrayUnion({
+          status: reservation.status,
+          actor: 'admin',
+          note: 'Datos del cliente y pasajeros actualizados en esta reserva.',
+          createdAt: now,
+        }),
+      });
+    }
     if (payload.attachments?.length) {
       await addReservaAttachments(payload.reservationId, payload.attachments);
     }
@@ -968,19 +1068,40 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         ? Timestamp.fromDate(new Date(movement.occurredAt))
         : now;
 
-      await setDoc(paymentRef, {
+      if (!adminDb) throw new Error('Firebase Admin no está configurado');
+      const movementCurrency = String(movement.currency || reservation.currency || 'ars').toLowerCase();
+      if (movementCurrency !== String(reservation.currency).toLowerCase()) return NextResponse.json({ error: 'La moneda del movimiento debe coincidir con la reserva' }, { status: 400 });
+      const movementData = {
         method: normalizePaymentMovementMethod(movement.method, movement.movementType),
         movementType: movement.movementType,
         source: 'manual',
         status: normalizePaymentMovementStatus(movement.movementType),
         amount: movement.amount,
-        currency: String(movement.currency || reservation.currency || 'ars').toLowerCase(),
+        currency: movementCurrency,
         message: movement.message,
         reference: movement.reference?.trim() || null,
         recordedBy: adminUser?.email ?? 'admin',
-        occurredAt,
-        createdAt: now,
-        updatedAt: now,
+        occurredAt: occurredAt.toDate(),
+        createdAt: now.toDate(),
+        updatedAt: now.toDate(),
+      };
+      const privateDb = adminDb;
+      await privateDb.runTransaction(async (tx) => {
+        const ref = privateDb.collection('reservas').doc(payload.reservationId);
+        const current = await tx.get(ref);
+        const prior = movement.movementType === 'refund' ? await tx.get(ref.collection('payments')) : null;
+        if (!current.exists) throw new Error('La reserva no existe');
+        if (occurredAt.toMillis() > Date.now() + 60000) throw new Error('No se puede registrar un movimiento futuro');
+        const collector = ['payment', 'refund'].includes(movement.movementType)
+          ? collectorForPayment(String(current.data()?.operations?.sellerHotelId ?? ''), movementData.method)
+          : undefined;
+        if (prior) {
+          const sellerHotelId = String(current.data()?.operations?.sellerHotelId ?? '');
+          const collectorPaid = prior.docs.map((d) => d.data() as PaymentRecord).filter((p) => collectorForPayment(sellerHotelId, p.method) === collector && String(p.currency ?? movementCurrency).toLowerCase() === movementCurrency).reduce((sum, p) => sum + signedPayment(p), 0);
+          if (movement.amount > collectorPaid) throw new Error(collector === 'hotel' ? 'El reintegro supera lo que recibió el hotel' : 'La devolución supera lo cobrado por Baftravel');
+        }
+        tx.create(ref.collection('payments').doc(paymentRef.id), { ...movementData, ...(collector ? { collectedBy: collector } : {}) });
+        tx.update(ref, { financeVersion: (Number(current.data()?.financeVersion) || 0) + 1 });
       });
 
       await updateDoc(doc(db, COLLECTION, payload.reservationId), {
@@ -994,6 +1115,186 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       }).catch(() => null);
     }
 
+    if (payload.correctPaymentEvent) {
+      if (!adminDb) throw new Error('Firebase Admin no está configurado');
+      const correction = payload.correctPaymentEvent;
+      const privateDb = adminDb;
+      const reservationRef = privateDb.collection(COLLECTION).doc(payload.reservationId);
+      const paymentCollection = reservationRef.collection('payments');
+      const originalRef = paymentCollection.doc(correction.paymentId);
+      const replacementRef = paymentCollection.doc(`manual_${randomUUID()}`);
+      const now = Timestamp.now();
+      const method = normalizePaymentMovementMethod(correction.method, correction.movementType);
+      const currency = String(reservation.currency || 'ars').toLowerCase();
+      await privateDb.runTransaction(async (tx) => {
+        const reservationSnap = await tx.get(reservationRef);
+        const originalSnap = await tx.get(originalRef);
+        const paymentSnap = await tx.get(paymentCollection);
+        if (!reservationSnap.exists || !originalSnap.exists) throw new Error('No se encontró el movimiento que querés corregir.');
+        const original = originalSnap.data() ?? {};
+        if (original.source !== 'manual' && !(original.source == null && original.recordedBy)) {
+          throw new Error('Solo se pueden corregir movimientos registrados manualmente.');
+        }
+        if (String(original.status ?? '').toLowerCase() === 'voided' || original.correctedBy) {
+          throw new Error('Este movimiento ya fue corregido.');
+        }
+        if (String(original.movementType ?? '') === 'extra' && original.includedInTotal === true) {
+          throw new Error('Editá o quitá este adicional desde el detalle de la venta.');
+        }
+        if (String(original.movementType ?? 'payment') === 'payment' && correction.movementType === 'refund') {
+          throw new Error('Un reintegro es un movimiento nuevo; agregalo como “Reintegro” en lugar de convertir un cobro.');
+        }
+        if (String(original.currency ?? currency).toLowerCase() !== currency) {
+          throw new Error('La moneda del movimiento debe coincidir con la reserva.');
+        }
+        const reservationData = reservationSnap.data() ?? {};
+        const sellerHotelId = String(reservationData.operations?.sellerHotelId ?? '');
+        const collector = ['payment', 'refund'].includes(correction.movementType)
+          ? collectorForPayment(sellerHotelId, method)
+          : undefined;
+        if (correction.movementType === 'refund') {
+          const alreadyCollected = paymentSnap.docs
+            .filter((entry) => entry.id !== originalSnap.id && String(entry.data().status ?? '').toLowerCase() !== 'voided')
+            .map((entry) => entry.data() as PaymentRecord)
+            .filter((entry) => collectorForPayment(sellerHotelId, entry.method) === collector && String(entry.currency ?? currency).toLowerCase() === currency)
+            .reduce((sum, entry) => sum + signedPayment(entry), 0);
+          if (correction.amount > alreadyCollected) {
+            throw new Error(collector === 'hotel' ? 'El reintegro supera lo que recibió el hotel.' : 'La devolución supera lo cobrado por Baftravel.');
+          }
+        }
+        const occurredAt = correction.occurredAt
+          ? Timestamp.fromDate(new Date(correction.occurredAt)).toDate()
+          : original.occurredAt ?? now.toDate();
+        if (occurredAt instanceof Date && occurredAt.getTime() > Date.now() + 60000) throw new Error('No se puede registrar un movimiento futuro.');
+        const nextMovement = {
+          method,
+          movementType: correction.movementType,
+          source: 'manual',
+          status: normalizePaymentMovementStatus(correction.movementType),
+          amount: correction.amount,
+          currency,
+          message: correction.message,
+          reference: correction.reference?.trim() || null,
+          recordedBy: adminUser.email,
+          occurredAt,
+          createdAt: now.toDate(),
+          updatedAt: now.toDate(),
+          correctsPaymentId: correction.paymentId,
+          correctionReason: correction.reason,
+          ...(original.includedInTotal === true ? { includedInTotal: true } : {}),
+          ...(original.extraId ? { extraId: original.extraId } : {}),
+          ...(collector ? { collectedBy: collector } : {}),
+        };
+        tx.update(originalRef, {
+          status: 'voided',
+          correctedBy: replacementRef.id,
+          correctionReason: correction.reason,
+          correctedAt: now.toDate(),
+          updatedAt: now.toDate(),
+        });
+        tx.create(replacementRef, nextMovement);
+        const history = Array.isArray(reservationData.statusHistory) ? reservationData.statusHistory : [];
+        tx.update(reservationRef, {
+          financeVersion: (Number(reservationData.financeVersion) || 0) + 1,
+          updatedAt: now.toDate(),
+          statusHistory: [...history, {
+            status: String(reservationData.status ?? 'reserved'),
+            actor: 'admin',
+            note: `Movimiento financiero corregido: ${correction.reason}`,
+            createdAt: now.toDate(),
+          }],
+        });
+      });
+    }
+
+    if (payload.updateAddonExtra || payload.removeAddonExtra) {
+      if (!adminDb) throw new Error('Firebase Admin no está configurado');
+      const privateDb = adminDb;
+      const reservationRef = privateDb.collection(COLLECTION).doc(payload.reservationId);
+      const edit = payload.updateAddonExtra ?? payload.removeAddonExtra!;
+      const now = Timestamp.now();
+      const paymentsRef = reservationRef.collection('payments');
+      await privateDb.runTransaction(async (tx) => {
+        const snapshot = await tx.get(reservationRef);
+        const paymentSnapshot = await tx.get(paymentsRef);
+        if (!snapshot.exists) throw new Error('La reserva no existe.');
+        const current = snapshot.data() ?? {};
+        const currentExtras = Array.isArray(current.selectedExtras) ? current.selectedExtras as Array<Record<string, unknown>> : [];
+        const selected = currentExtras[edit.index];
+        if (!selected || String(selected.label ?? '').trim() !== edit.expectedLabel || Number(selected.amount ?? 0) !== edit.expectedAmount) {
+          throw new Error('Los adicionales cambiaron desde que abriste esta venta. Actualizá la página e intentá de nuevo.');
+        }
+        const nextExtras = [...currentExtras];
+        const extraId = String(selected.id ?? randomUUID());
+        const matchingExtraMovement = paymentSnapshot.docs.find((entry) => {
+          const movement = entry.data();
+          if (movement.source !== 'manual' || movement.movementType !== 'extra' || movement.includedInTotal !== true || String(movement.status ?? '').toLowerCase() === 'voided' || Number(movement.amount ?? 0) !== Number(selected.amount ?? 0)) return false;
+          if (selected.id) return movement.extraId === selected.id;
+          return !movement.extraId && String(movement.message ?? '') === `Adicional sumado: ${String(selected.label ?? '')}`;
+        });
+        let historyNote = '';
+        if (payload.updateAddonExtra) {
+          const update = payload.updateAddonExtra;
+          const previousAmount = Number(selected.amount ?? 0) || 0;
+          nextExtras[update.index] = { ...selected, id: extraId, label: update.title, amount: update.amount, scope: update.scope };
+          historyNote = `Adicional editado: ${String(selected.label)} → ${update.title} (${previousAmount} → ${update.amount} centavos).`;
+        } else {
+          const removed = nextExtras.splice(edit.index, 1)[0];
+          historyNote = `Adicional eliminado: ${String(removed?.label ?? 'Adicional')} (${Number(removed?.amount ?? 0)} centavos).`;
+        }
+        const previousAmount = Number(selected.amount ?? 0) || 0;
+        const nextAmount = payload.updateAddonExtra ? payload.updateAddonExtra.amount : 0;
+        const delta = nextAmount - previousAmount;
+        const replacementMovementRef = matchingExtraMovement && payload.updateAddonExtra
+          ? paymentsRef.doc(`manual_${randomUUID()}`)
+          : null;
+        if (matchingExtraMovement) {
+          tx.update(matchingExtraMovement.ref, {
+            status: 'voided',
+            ...(replacementMovementRef ? { correctedBy: replacementMovementRef.id } : {}),
+            correctionReason: historyNote,
+            correctedAt: now.toDate(),
+            updatedAt: now.toDate(),
+          });
+        }
+        if (replacementMovementRef && payload.updateAddonExtra) {
+          const currentCurrency = String(current.currency ?? 'ars').toLowerCase();
+          tx.create(replacementMovementRef, {
+            extraId,
+            method: 'admin',
+            movementType: 'extra',
+            source: 'manual',
+            status: 'recorded',
+            amount: payload.updateAddonExtra.amount,
+            currency: currentCurrency,
+            message: `Adicional actualizado: ${payload.updateAddonExtra.title}`,
+            includedInTotal: true,
+            reference: null,
+            recordedBy: adminUser.email,
+            occurredAt: now.toDate(),
+            createdAt: now.toDate(),
+            updatedAt: now.toDate(),
+            correctsPaymentId: matchingExtraMovement.id,
+            correctionReason: historyNote,
+          });
+        }
+        const history = Array.isArray(current.statusHistory) ? current.statusHistory : [];
+        tx.update(reservationRef, {
+          selectedExtras: nextExtras,
+          amountTotal: Math.max(0, (Number(current.amountTotal) || 0) + delta),
+          extrasTotalAmount: nextExtras.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+          financeVersion: (Number(current.financeVersion) || 0) + 1,
+          updatedAt: now.toDate(),
+          statusHistory: [...history, {
+            status: String(current.status ?? 'reserved'),
+            actor: 'admin',
+            note: historyNote,
+            createdAt: now.toDate(),
+          }],
+        });
+      });
+    }
+
     if (payload.addAddonExtra) {
       // Sumar un adicional a una venta creada: se agrega a selectedExtras y
       // se recalcula amountTotal para que el detalle muestre el nuevo total.
@@ -1003,51 +1304,64 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       if (!title || price <= 0) {
         return NextResponse.json({ error: 'Adicional inválido.' }, { status: 400 });
       }
-      const peopleCount = Math.max(1, Number(reservation.people ?? 1) || 1);
-      const extraInCents = Math.round(price * 100) * (perPerson ? peopleCount : 1);
-      const currentExtras = Array.isArray(reservation.selectedExtras) ? reservation.selectedExtras : [];
-      const nextExtras = [
-        ...currentExtras,
-        {
+      if (!adminDb) throw new Error('Firebase Admin no está configurado');
+      const privateDb = adminDb;
+      const reservationRef = privateDb.collection(COLLECTION).doc(payload.reservationId);
+      const paymentRef = reservationRef.collection('payments').doc(`manual_${randomUUID()}`);
+      const extraId = randomUUID();
+      const nowAddon = Timestamp.now();
+      await privateDb.runTransaction(async (tx) => {
+        const snapshot = await tx.get(reservationRef);
+        if (!snapshot.exists) throw new Error('La reserva no existe.');
+        const current = snapshot.data() ?? {};
+        const peopleCount = Math.max(1, Number(current.people ?? 1) || 1);
+        const extraInCents = Math.round(price * 100) * (perPerson ? peopleCount : 1);
+        const currentExtras = Array.isArray(current.selectedExtras) ? current.selectedExtras as Array<Record<string, unknown>> : [];
+        const nextExtras = [...currentExtras, {
+          id: extraId,
           code: 'manualExtra',
           label: title,
           amount: extraInCents,
           source: 'manualExtra',
           scope: perPerson ? 'per_person' : 'per_booking',
-        },
-      ];
-      const nextTotal = Math.max(0, Number(reservation.amountTotal ?? 0) || 0) + extraInCents;
-      const nowAddon = Timestamp.now();
-      await updateDoc(doc(db, COLLECTION, payload.reservationId), {
-        selectedExtras: nextExtras,
-        amountTotal: nextTotal,
-        updatedAt: nowAddon,
-        statusHistory: arrayUnion({
-          status: reservation.status,
-          actor: 'admin',
-          note: `Adicional sumado: ${title}`,
-          createdAt: nowAddon,
-        }),
-      });
-      const paymentRef = doc(collection(db, COLLECTION, payload.reservationId, 'payments'), `manual_${randomUUID()}`);
-      await setDoc(paymentRef, {
-        method: 'admin',
-        movementType: 'extra',
-        source: 'manual',
-        status: 'recorded',
-        amount: extraInCents,
-        currency: String(reservation.currency || 'ars').toLowerCase(),
-        message: `Adicional sumado: ${title}`,
-        reference: null,
-        recordedBy: adminUser?.email ?? 'admin',
-        occurredAt: nowAddon,
-        createdAt: nowAddon,
-        updatedAt: nowAddon,
+        }];
+        const history = Array.isArray(current.statusHistory) ? current.statusHistory : [];
+        const currency = String(current.currency || 'ars').toLowerCase();
+        tx.update(reservationRef, {
+          selectedExtras: nextExtras,
+          amountTotal: Math.max(0, Number(current.amountTotal ?? 0) || 0) + extraInCents,
+          extrasTotalAmount: nextExtras.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+          financeVersion: (Number(current.financeVersion) || 0) + 1,
+          updatedAt: nowAddon.toDate(),
+          statusHistory: [...history, {
+            status: String(current.status ?? 'reserved'),
+            actor: 'admin',
+            note: `Adicional sumado: ${title}`,
+            createdAt: nowAddon.toDate(),
+          }],
+        });
+        tx.create(paymentRef, {
+          extraId,
+          method: 'admin',
+          movementType: 'extra',
+          source: 'manual',
+          status: 'recorded',
+          amount: extraInCents,
+          currency,
+          message: `Adicional sumado: ${title}`,
+          includedInTotal: true,
+          reference: null,
+          recordedBy: adminUser.email,
+          occurredAt: nowAddon.toDate(),
+          createdAt: nowAddon.toDate(),
+          updatedAt: nowAddon.toDate(),
+        });
       });
     }
 
     // La comisión siempre refleja el estado actual de la venta y sus pagos.
     await syncReservationPayoutStatus(payload.reservationId).catch(() => null);
+    await prepareReservationOperations(payload.reservationId, true).catch((error) => console.error('[reservas] preparación de avisos:', error));
 
     const emailResults: Array<{ type: string; sent: boolean; error?: string }> = [];
     const queueEmail = async (type: 'cliente_voucher_48hs' | 'admin_aviso') => {

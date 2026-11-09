@@ -1271,6 +1271,12 @@ export async function POST(request: Request) {
           status: 'processed',
         });
 
+        if (isApproved && orderId) {
+          const savedOrder = await getDoc(doc(db, 'orders', orderId));
+          const ids = savedOrder.data()?.reservationIds ?? [];
+          const { prepareReservationOperations } = await import('@/lib/operations/lifecycle');
+          for (const id of ids) await prepareReservationOperations(String(id)).catch((error) => console.error('[operaciones]', error));
+        }
         return NextResponse.json({ received: true, processed: true });
       } catch (error) {
         const errorDetail = error instanceof Error ? error.message : String(error);
@@ -1681,6 +1687,7 @@ export async function POST(request: Request) {
         isApproved,
         createdNew: !txResult.hadReserva,
       });
+      if (isApproved) await import('@/lib/operations/lifecycle').then(({ prepareReservationOperations }) => prepareReservationOperations(reservationId)).catch((error) => console.error('[operaciones]', error));
 
       // Actualizar checkout intent
       if (intentId) {

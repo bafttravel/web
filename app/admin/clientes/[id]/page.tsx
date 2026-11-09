@@ -1,4 +1,5 @@
 'use client';
+import { adminDateLabel } from '@/lib/admin/dates';
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -15,13 +16,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 
 const formatDate = (date: Date | { toDate: () => Date } | undefined) => {
-  if (!date) return 'N/A';
-  const d = typeof date === 'object' && 'toDate' in date ? date.toDate() : new Date(date);
-  return d.toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return adminDateLabel(date);
 };
 
 export default function ClienteDetailPage() {

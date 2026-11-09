@@ -1,12 +1,19 @@
 'use client';
+import ManualReservationFlow, { loadReservationHotels } from './ManualReservationFlow';
+import AddonDisclosureButton from './AddonDisclosureButton';
+import { manualReservationPaymentFields } from '@/lib/admin/manual-reservation';
+import AdminDatePicker from './AdminDatePicker';
+import AdminFilePicker from './AdminFilePicker';
+import { RESERVATION_FILE_ACCEPT } from '@/lib/admin/files';
+import { adminDateLabel } from '@/lib/admin/dates';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { EMPTY_RESERVATION_OPERATIONS, type ReservationOperationsInput, type Counterparty } from '@/lib/operations/types';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { ArgentineDateInput } from '@/components/ui/argentine-date-input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -18,7 +25,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, Receipt, Trash2 } from 'lucide-react';
+import { CalendarDays, Loader2, Receipt, Trash2 } from 'lucide-react';
+import { salesChannelLabel } from '@/lib/admin/sales-channels';
 import { useAuth } from '@/hooks/useAuth';
 import type {
   ReservationStatus,
@@ -45,6 +53,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 type Props = {
   paquetes: Paquete[];
+  loadAddonPackages?: typeof getAllPaquetesAdmin;
+  loadManualHotels?: typeof loadReservationHotels;
   hideReferral?: boolean;
   hideVendorSelect?: boolean;
   hideStatus?: boolean;
@@ -58,10 +68,13 @@ type Props = {
     customerName?: string;
     customerEmail?: string;
     customerPhone?: string;
+    customerCountry?: string;
     customerDocument?: string;
     customerBirthDate?: string;
     customerComments?: string;
     selectedExtraCodes?: string[];
+    manualExtras?: Array<{ title: string; price: number }>;
+    passengerDetails?: ReservationTravelerDetails[];
   };
 };
 
@@ -90,6 +103,8 @@ const DEFAULT_FORM_STATE: FormState = {
 };
 
 type TravelerForm = {
+  nationality: string;
+  diet: string;
   firstName: string;
   lastName: string;
   age: string;
@@ -99,6 +114,8 @@ type TravelerForm = {
 };
 
 const EMPTY_TRAVELER: TravelerForm = {
+  nationality: '',
+  diet: '',
   firstName: '',
   lastName: '',
   age: '',
@@ -131,7 +148,12 @@ const statusOptions: { value: ReservationStatus; label: string }[] = [
   { value: 'completed', label: 'Completada' },
 ];
 
-export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSelect, hideStatus, apiEndpoint, successRedirect, initialData }: Props) {
+export default function AdminReservaForm({ paquetes, loadAddonPackages = getAllPaquetesAdmin, loadManualHotels = loadReservationHotels, hideReferral, hideVendorSelect, hideStatus, apiEndpoint, successRedirect, initialData }: Props) {
+  const creationRequestId = useRef(crypto.randomUUID());
+  const [operations, setOperations] = useState<ReservationOperationsInput>({ ...EMPTY_RESERVATION_OPERATIONS });
+  const [initialPaymentMethod, setInitialPaymentMethod] = useState('pending');
+  const [initialAmount, setInitialAmount] = useState('');
+  const [operationalHotels, setOperationalHotels] = useState<Counterparty[]>([]);
   const router = useRouter();
   const { user } = useAuth();
   const [selectedPackageId, setSelectedPackageId] = useState<string>(
@@ -140,7 +162,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
   const [date, setDate] = useState<string>(initialData?.date ?? 'sin-fecha');
   const [adults, setAdults] = useState<number>(() => {
     const val = initialData?.peopleAdults;
-    return typeof val === 'number' && val > 0 ? val : 1;
+    return typeof val === 'number' && val >= 0 ? val : 1;
   });
   const [minors, setMinors] = useState<number>(() => {
     const val = initialData?.peopleMinors;
@@ -158,6 +180,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
         customerLastName: parts.slice(1).join(' ') ?? '',
         customerEmail: initialData.customerEmail ?? '',
         customerPhone: initialData.customerPhone ?? '',
+        customerCountry: initialData.customerCountry ?? DEFAULT_COUNTRY_NAME,
         customerDocument: initialData.customerDocument ?? '',
         customerBirthDate: initialData.customerBirthDate ?? '',
         customerComments: initialData.customerComments ?? '',
@@ -185,14 +208,25 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
    */
   const [manualExtras, setManualExtras] = useState<
     Array<{ key: string; title: string; price: number; packageTitle?: string }>
-  >([]);
+  >(() => (initialData?.manualExtras ?? []).map((item, index) => ({ key: `duplicate-extra-${index}`, ...item })));
   const [showAddonCatalog, setShowAddonCatalog] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [addonCatalog, setAddonCatalog] = useState<
     Array<{ packageId: string; packageTitle: string; addon: { id: string; title: string; description: string; price: number } }>
   >([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
-  const [passengerDetails, setPassengerDetails] = useState<TravelerForm[]>([]);
+  const [passengerDetails, setPassengerDetails] = useState<TravelerForm[]>(() =>
+    (initialData?.passengerDetails ?? []).map((traveler) => ({
+      nationality: traveler.nationality ?? '',
+      diet: traveler.diet ?? '',
+      firstName: traveler.firstName ?? '',
+      lastName: traveler.lastName ?? '',
+      age: traveler.age == null ? '' : String(traveler.age),
+      birthDate: traveler.birthDate ?? '',
+      phone: traveler.phone ?? '',
+      document: traveler.document ?? '',
+    }))
+  );
 
   const selectedPaquete = useMemo(
     () => paquetes.find((item) => item.id === selectedPackageId) ?? null,
@@ -289,18 +323,9 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
   const selectedDialCode = getCountryDialCode(form.customerCountry) || '+54';
 
   const formattedDateLabel = useMemo(() => {
-    if (!date || date === 'sin-fecha') return 'Sin fecha específica';
-    try {
-      return new Date(`${date}T12:00:00`).toLocaleDateString('es-AR', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-    } catch {
-      return date;
-    }
-  }, [date]);
+    if (!date || date === 'sin-fecha') return hideVendorSelect ? 'Sin fecha específica' : 'A coordinar';
+    return adminDateLabel(date);
+  }, [date, hideVendorSelect]);
 
   const resolvedSelectedDeparture = useMemo(() => {
     if (!selectedPaquete) return null;
@@ -320,7 +345,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
     if (!showAddonCatalog) return;
     let cancelled = false;
     setLoadingCatalog(true);
-    getAllPaquetesAdmin()
+    loadAddonPackages()
       .then((all) => {
         if (cancelled) return;
         const entries: Array<{
@@ -353,7 +378,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
     return () => {
       cancelled = true;
     };
-  }, [showAddonCatalog, selectedPackageId]);
+  }, [showAddonCatalog, selectedPackageId, loadAddonPackages]);
 
   const filteredCatalog = useMemo(() => {
     const query = catalogQuery.trim().toLowerCase();
@@ -470,11 +495,11 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
     return selectedSeatIds.map((id) => seatLabelById.get(id) || id).filter(Boolean);
   }, [selectedSeatIds, seatLabelById]);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
+  const handleFileUpload = async (files: File[]) => {
     if (!files?.length) return;
     setUploadingFiles(true);
     const uploaded: AttachmentPreview[] = [];
+    const failed: string[] = [];
     for (const file of Array.from(files)) {
       const formData = new FormData();
       const key = `reservas/${crypto.randomUUID()}-${file.name}`;
@@ -490,6 +515,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
           toast.error('No se pudo subir el archivo', {
             description: error?.error ?? 'Reintentá con otro archivo',
           });
+          failed.push(file.name);
           continue;
         }
         const data = await response.json();
@@ -503,13 +529,12 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
       } catch (error) {
         console.error('[AdminReservaForm] Upload error:', error);
         toast.error('Error subiendo archivo');
+        failed.push(file.name);
       }
     }
     setAttachments((prev) => [...prev, ...uploaded]);
     setUploadingFiles(false);
-    if (event.target) {
-      event.target.value = '';
-    }
+    if (failed.length) throw new Error(`No se pudieron adjuntar: ${failed.join(', ')}. Seleccioná nuevamente solo esos archivos.`);
   };
 
   const handleRemoveAttachment = async (attachment: AttachmentPreview) => {
@@ -538,6 +563,8 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
           birthDate: traveler.birthDate.trim(),
           phone: traveler.phone.trim(),
           document: traveler.document.trim(),
+          nationality: traveler.nationality.trim(),
+          diet: traveler.diet.trim(),
           travelerType: age < 18 ? 'minor' : 'adult',
         };
       }),
@@ -546,10 +573,12 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (uploadingFiles) { toast.info('Esperá a que terminen de subirse los archivos'); return; }
     if (!selectedPaquete) {
       toast.error('Seleccioná un paquete antes de continuar');
       return;
     }
+    if (!hideVendorSelect && dateOptions.length && !dateOptions.includes(date)) { toast.error('Seleccioná una salida de la excursión elegida'); return; }
     if (!user) {
       toast.error('Debes iniciar sesión para crear la reserva');
       return;
@@ -598,6 +627,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          requestId: creationRequestId.current,
           packageId: selectedPaquete.id,
           date,
           peopleAdults: Math.max(0, Number(adults) || 0),
@@ -611,6 +641,8 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
           customerBirthDate: form.customerBirthDate || undefined,
           customerComments: form.customerComments || undefined,
           passengerDetails: sanitizedPassengerDetails,
+          ...(!hideVendorSelect ? { operations } : {}),
+          ...(!hideVendorSelect ? manualReservationPaymentFields(!!initialData) : { initialPayment: { method: initialPaymentMethod, ...(initialAmount.trim() ? { amount: Math.round(Number(initialAmount) * 100) } : {}) } }),
           ...(depositPercentAdults.trim() ? { depositPercentAdults: Number(depositPercentAdults) } : {}),
           ...(depositPercentMinors.trim() ? { depositPercentMinors: Number(depositPercentMinors) } : {}),
           ...(selectedExtraCodes.length ? { selectedExtraCodes } : {}),
@@ -650,6 +682,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
       }
 
       const payload = await response.json();
+      if (payload.notificationWarning) toast.warning(payload.notificationWarning);
       toast.success('Reserva creada exitosamente');
       router.push(successRedirect ? successRedirect.replace(':id', payload.id) : `/admin/ventas/${payload.id}`);
     } catch (error) {
@@ -660,16 +693,19 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
     }
   };
 
+  const selectedSellerHotel = operationalHotels.find((hotel) => hotel.id === operations.sellerHotelId);
+  const selectedPickupHotel = operationalHotels.find((hotel) => hotel.id === operations.pickupHotelId);
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-3xl border border-black/5 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <div className={!hideVendorSelect ? 'admin-reservation-page space-y-6' : 'space-y-6'}>
+      <div className="admin-page-heading flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">
-            Ventas · Nueva venta manual
+          <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">
+            Operación · Reservas
           </p>
-          <h1 className="mt-1.5 text-[22px] font-bold tracking-[-0.02em] text-gray-900">Crear reserva manual</h1>
+          <h1 className="mt-1.5 text-[22px] font-bold tracking-[-0.02em] text-gray-900">{initialData ? 'Duplicar reserva' : 'Crear reserva manual'}</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            Cargá el paquete, el titular y los pasajeros. Los comentarios y los comprobantes son opcionales.
+            {initialData ? 'Revisá los datos copiados y confirmá la nueva reserva; se guardará como una venta independiente.' : 'Elegí la excursión, completá los pasajeros y coordiná el retiro.'}
           </p>
         </div>
         <Button asChild variant="outline" className="shrink-0 rounded-full text-sm font-medium">
@@ -677,24 +713,25 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <Card className="bg-white shadow-sm ring-1 ring-black/5">
+      {!hideVendorSelect && <nav className="admin-editor-nav" aria-label="Secciones de la reserva"><a href="#reservation-excursion">Excursión</a><a href="#reservation-customer">Pasajeros</a><a href="#reservation-pickup">Venta y retiro</a><a href="#reservation-notes">Notas y archivos</a></nav>}
+      <div className={!hideVendorSelect ? 'admin-reservation-editor grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]' : 'grid gap-6 lg:grid-cols-[1.15fr_0.85fr]'}>
+        <Card className="admin-reservation-main-card bg-white shadow-sm ring-1 ring-black/5">
           <CardContent className="p-5 sm:p-6">
-            <form onSubmit={handleSubmit} className="space-y-7">
-              <section className="space-y-4">
+            <form id="manual-reservation-form" onSubmit={handleSubmit} className="admin-reservation-form space-y-7">
+              <section id="reservation-excursion" className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">01 · Reserva</span>
+                  <span role="heading" aria-level={2} className="admin-section-title text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">{hideVendorSelect ? '01 · Reserva' : '01 · Excursión y salida'}</span>
                   <div className="h-px flex-1 bg-gray-100" />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>Paquete</Label>
+                    <Label htmlFor="reservation-package">{hideVendorSelect ? 'Paquete' : 'Excursión'}</Label>
                     <Select
                       value={selectedPackageId}
                       onValueChange={(value) => setSelectedPackageId(value)}
                     >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Seleccioná un paquete" />
+                    <SelectTrigger id="reservation-package" className="w-full">
+                      <SelectValue placeholder="Seleccioná una excursión" />
                     </SelectTrigger>
                     <SelectContent>
                       {paquetes.map((pkg) => (
@@ -706,10 +743,10 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Estado</Label>
+                  <Label htmlFor="reservation-status">Estado</Label>
                   {!hideStatus && (
                     <Select value={status} onValueChange={(value) => setStatus(value as ReservationStatus)}>
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id="reservation-status" className="w-full">
                         <SelectValue placeholder="Estado" />
                       </SelectTrigger>
                       <SelectContent>
@@ -726,36 +763,16 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Fecha / salida</Label>
-                  {dateOptions.length > 0 ? (
-                    <Select value={date} onValueChange={(value) => setDate(value)}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Seleccioná una fecha" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {dateOptions.map((slot) => (
-                          <SelectItem key={slot} value={slot}>
-                            {slot}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="sin-fecha">Sin fecha específica</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      type="date"
-                      value={date === 'sin-fecha' ? '' : date}
-                      onChange={(event) => setDate(event.target.value || 'sin-fecha')}
-                    />
-                  )}
-                  <p className="text-xs capitalize text-gray-500">{formattedDateLabel}</p>
+                  <Label>Fecha de la excursión</Label>
+                  {hideVendorSelect || dateOptions.length > 1 ? <AdminDatePicker aria-label="Fecha de la excursión" required={!hideVendorSelect && dateOptions.length > 1} value={date === 'sin-fecha' ? '' : date} allowedDates={dateOptions.length ? dateOptions : undefined} onValueChange={(value) => { if (hideVendorSelect || dateOptions.includes(value)) setDate(value || 'sin-fecha'); }} /> : <div className="admin-reservation-departure"><CalendarDays size={16} aria-hidden="true" /><output aria-label="Fecha de la excursión">{dateOptions.length === 1 ? adminDateLabel(dateOptions[0]) : 'A coordinar'}</output></div>}
+                  <p className="admin-caption">{hideVendorSelect ? formattedDateLabel : dateOptions.length === 1 ? 'Asignada desde la excursión elegida.' : dateOptions.length > 1 ? 'Elegí una de las salidas programadas.' : selectedPaquete ? 'La excursión no tiene salidas programadas.' : 'Seleccioná una excursión para ver su salida.'}</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Pasajeros</Label>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-500">Adultos</Label>
+                      <Label htmlFor="reservation-adults" className="text-xs text-gray-500">Adultos</Label>
                       <Input
+                        id="reservation-adults"
                         type="number"
                         min={0}
                         max={50}
@@ -764,8 +781,9 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs text-gray-500">Menores</Label>
+                      <Label htmlFor="reservation-minors" className="text-xs text-gray-500">Menores</Label>
                       <Input
+                        id="reservation-minors"
                         type="number"
                         min={0}
                         max={50}
@@ -810,7 +828,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
 
               {packageAddonOptions.length > 0 ? (
                 <div className="rounded-2xl bg-gray-50 p-4">
-                  <Label className="text-xs text-gray-600">Adicionales del paquete</Label>
+                  <Label className="text-xs text-gray-600">{hideVendorSelect ? 'Adicionales del paquete' : 'Adicionales de la excursión'}</Label>
                   <p className="mt-0.5 text-xs text-gray-500">
                     Se cobran una sola vez por reserva, no por persona.
                   </p>
@@ -862,7 +880,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                 </div>
               ) : null}
 
-              <div className={hideVendorSelect ? 'hidden' : 'rounded-2xl bg-gray-50 p-4'}>
+              <div className={hideVendorSelect ? 'hidden' : 'admin-reservation-addon-catalog rounded-2xl bg-gray-50 p-4'}>
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <Label className="text-xs text-gray-600">Adicionales de otras excursiones</Label>
@@ -870,15 +888,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                       Traé un adicional creado para otra excursión sin salir de acá.
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={submitting || loadingCatalog}
-                    onClick={() => setShowAddonCatalog((prev) => !prev)}
-                  >
-                    {showAddonCatalog ? 'Ocultar' : loadingCatalog ? 'Cargando…' : 'Buscar'}
-                  </Button>
+                  <AddonDisclosureButton open={showAddonCatalog} controls="reservation-addon-catalog" disabled={submitting || loadingCatalog} onToggle={() => setShowAddonCatalog((prev) => !prev)} closedLabel={loadingCatalog ? 'Cargando…' : 'Buscar adicionales'} />
                 </div>
                 {manualExtras.length > 0 ? (
                   <div className="mt-3 space-y-1.5">
@@ -913,7 +923,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                   </div>
                 ) : null}
                 {showAddonCatalog ? (
-                  <div className="mt-3">
+                  <div id="reservation-addon-catalog" className="mt-3">
                     <Input
                       value={catalogQuery}
                       onChange={(event) => setCatalogQuery(event.target.value)}
@@ -1015,15 +1025,16 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
               </div>
             ) : null}
 
-              <section className="space-y-4">
+              <section id="reservation-customer" className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">02 · Titular</span>
+                  <span role="heading" aria-level={2} className="admin-section-title text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">{hideVendorSelect ? '02 · Titular' : '02 · Titular y pasajeros'}</span>
                   <div className="h-px flex-1 bg-gray-100" />
                 </div>
                 <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
                   <div className="space-y-1.5">
-                    <Label>Nombre *</Label>
+                    <Label htmlFor="reservation-first-name">Nombre *</Label>
                     <Input
+                      id="reservation-first-name"
                       required
                       value={form.customerFirstName}
                       onChange={(event) => handleFormChange('customerFirstName', event.target.value)}
@@ -1031,8 +1042,9 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Apellido *</Label>
+                    <Label htmlFor="reservation-last-name">Apellido *</Label>
                     <Input
+                      id="reservation-last-name"
                       required
                       value={form.customerLastName}
                       onChange={(event) => handleFormChange('customerLastName', event.target.value)}
@@ -1040,8 +1052,9 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                     />
                   </div>
                   <div className="col-span-2 space-y-1.5 md:col-span-1">
-                    <Label>Email *</Label>
+                    <Label htmlFor="reservation-email">Email *</Label>
                     <Input
+                      id="reservation-email"
                       required
                       type="email"
                       value={form.customerEmail}
@@ -1073,30 +1086,30 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>DNI / Pasaporte</Label>
+                    <Label htmlFor="reservation-document">DNI / Pasaporte</Label>
                     <Input
+                      id="reservation-document"
                       value={form.customerDocument}
                       onChange={(event) => handleFormChange('customerDocument', event.target.value)}
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Fecha de nacimiento</Label>
-                    <ArgentineDateInput
+                    <Label htmlFor="reservation-birth-date">Fecha de nacimiento *</Label>
+                    <AdminDatePicker
+                      id="reservation-birth-date"
+                      required
+                      aria-label="Nacimiento del titular"
                       value={form.customerBirthDate}
-                      onChange={(value) => handleFormChange('customerBirthDate', value)}
+                      onValueChange={(value) => handleFormChange('customerBirthDate', value)}
                     />
                   </div>
                 </div>
-              </section>
-
               {!hideReferral && !hideVendorSelect && (
-                <section className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">03 · Referidos (opcional)</span>
-                    <div className="h-px flex-1 bg-gray-100" />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                <details className="admin-referral-disclosure">
+                  <summary>Asignar vendedor o código referido <span className="admin-caption">Opcional</span></summary>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
+                      <Label>Vendedor referido</Label>
                   <VendorCombobox
                     value={vendorId}
                     onChange={(id) => {
@@ -1107,6 +1120,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                   />
                     </div>
                     <div className="space-y-1">
+                      <Label>Código del vendedor</Label>
                       <Select
                         value={selectedReferralCode || 'none'}
                         onValueChange={(value) => {
@@ -1135,7 +1149,9 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                       </Select>
                     </div>
                     <div className="space-y-1">
+                      <Label htmlFor="reservation-referral-code">Código manual</Label>
                       <Input
+                        id="reservation-referral-code"
                         placeholder="o ingresá un código manual"
                         value={manualReferralCode}
                         onChange={(e) => {
@@ -1145,13 +1161,13 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                       />
                     </div>
                   </div>
-                </section>
+                </details>
               )}
 
               {passengerDetails.length > 0 ? (
                 <section className="space-y-3 rounded-2xl bg-gray-50 p-4">
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">04 · Pasajeros adicionales</span>
+                    <span role="heading" aria-level={3} className="admin-subsection-title text-sm font-semibold text-gray-900">Pasajeros adicionales</span>
                     <div className="h-px flex-1 bg-gray-100" />
                   </div>
                   <div className="space-y-3">
@@ -1203,9 +1219,10 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs text-gray-600">Fecha de nacimiento</Label>
-                            <ArgentineDateInput
+                            <AdminDatePicker
+                              aria-label={`Nacimiento del pasajero ${index + 2}`}
                               value={traveler.birthDate}
-                              onChange={(value) =>
+                              onValueChange={(value) =>
                                 setPassengerDetails((prev) =>
                                   prev.map((item, itemIndex) => (itemIndex === index ? { ...item, birthDate: value } : item))
                                 )
@@ -1238,22 +1255,27 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                               }
                             />
                           </div>
+                          <div className="space-y-1"><Label className="text-xs text-gray-600">Nacionalidad</Label><NationalitySelect value={traveler.nationality} onChange={(nationality) => setPassengerDetails((prev) => prev.map((item, i) => i === index ? { ...item, nationality } : item))} /></div>
+                          <div className="space-y-1"><Label className="text-xs text-gray-600">Dieta / alergias</Label><Input value={traveler.diet} onChange={(e) => setPassengerDetails((prev) => prev.map((item, i) => i === index ? { ...item, diet: e.target.value } : item))} /></div>
                         </div>
                       </div>
                      ))}
                   </div>
                 </section>
               ) : null}
+              </section>
 
-              <section className="space-y-4">
+              {!hideVendorSelect ? <ManualReservationFlow embedded loader={loadManualHotels} onHotelsLoaded={setOperationalHotels} value={operations} onChange={setOperations} total={amountTotal} currency={currency} /> : <section id="reservation-payment" className="space-y-3 rounded-xl border bg-white p-5"><h2 className="font-semibold">Cobro inicial</h2><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Medio<select className="h-10 w-full rounded border px-2" value={initialPaymentMethod} onChange={(e) => setInitialPaymentMethod(e.target.value)}><option value="pending">Sin cobro registrado</option><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="card">Tarjeta</option></select></label><label className="text-sm">Importe (vacío = total)<Input type="number" min="0" step="0.01" disabled={initialPaymentMethod === 'pending'} value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} /></label></div></section>}
+              <section id="reservation-notes" className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">05 · Notas y comprobantes (opcional)</span>
+                  <span role="heading" aria-level={2} className="admin-section-title text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">{hideVendorSelect ? '05 · Notas y comprobantes' : '04 · Notas y comprobantes'}</span><span className="admin-caption">Opcional</span>
                   <div className="h-px flex-1 bg-gray-100" />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Comentarios del cliente</Label>
+                  <Label htmlFor="reservation-comments">Comentarios del cliente</Label>
                   <Textarea
+                    id="reservation-comments"
                     value={form.customerComments}
                     onChange={(event) => handleFormChange('customerComments', event.target.value)}
                     placeholder="Anotá condiciones especiales, requerimientos o cualquier observación"
@@ -1262,22 +1284,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Comprobantes y archivos</Label>
-                  <div className="flex items-center gap-3">
-                    <Button variant="outline" className="rounded-full px-4" asChild>
-                      <label className="cursor-pointer">
-                        {uploadingFiles ? 'Subiendo...' : 'Subir archivos'}
-                        <input
-                          type="file"
-                          accept=".pdf,image/*"
-                          multiple
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                    </Button>
-                    {uploadingFiles && <span className="text-xs text-gray-500">Procesando archivos...</span>}
-                  </div>
+                  <AdminFilePicker label="Adjuntar comprobantes y archivos" description="PDF e imágenes" accept={RESERVATION_FILE_ACCEPT} multiple maxFiles={10} busy={uploadingFiles} disabled={submitting} onFilesSelected={handleFileUpload} processingLabel="Subiendo archivos…" successLabel="Archivos adjuntos a la reserva" showSelectedFiles={false} retryable={false} />
                   {attachments.length > 0 ? (
                     <div className="space-y-2 rounded-2xl border border-dashed border-gray-200 bg-white p-3">
                       {attachments.map((attachment) => (
@@ -1305,10 +1312,10 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                 </div>
               </section>
 
-              <div className="space-y-3">
+              {hideVendorSelect && <div className="space-y-3">
                 <Button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || uploadingFiles}
                   className="group h-12 w-full rounded-full bg-neutral-900 text-[15px] font-semibold tracking-[-0.01em] text-white transition-all duration-300 hover:bg-neutral-700 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-40"
                 >
                   {submitting ? (
@@ -1320,37 +1327,41 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                     'Crear reserva'
                   )}
                 </Button>
-              </div>
+              </div>}
             </form>
           </CardContent>
         </Card>
 
-        <div className="lg:sticky lg:top-6 lg:self-start">
+        <aside aria-label="Resumen de la reserva" className="admin-reservation-summary lg:sticky lg:top-6 lg:self-start">
         <Card className="bg-white shadow-sm ring-1 ring-black/5">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-[15px] font-semibold text-gray-900">Resumen</CardTitle>
-            <p className="text-xs text-gray-400">Datos que se van a guardar en la venta.</p>
+            <p className="text-xs text-gray-400">Revisá los datos antes de crear la reserva.</p>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="divide-y divide-gray-100 rounded-2xl border border-gray-100">
               <div className="px-4 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Paquete</p>
-                <p className="mt-0.5 truncate text-sm font-semibold text-gray-900">
+                <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Excursión</p>
+                <p className="mt-0.5 text-sm font-semibold text-gray-900">
                   {selectedPaquete?.titulo ?? '—'}
                 </p>
               </div>
               <div className="px-4 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Fecha</p>
+                <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Fecha</p>
                 <p className="mt-0.5 text-sm font-medium capitalize text-gray-900">{formattedDateLabel}</p>
               </div>
               <div className="px-4 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Pasajeros</p>
+                <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Pasajeros</p>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900">{peopleTotal}</p>
               </div>
+              {!hideVendorSelect && <>
+                <div className="px-4 py-2.5"><p className="admin-eyebrow">Venta</p><p>{operations.sellerHotelId ? selectedSellerHotel?.name || 'Hotel por seleccionar' : 'Baftravel'} · {salesChannelLabel(operations.channel)}</p></div>
+                <div className="px-4 py-2.5"><p className="admin-eyebrow">Retiro</p><p>{selectedPickupHotel?.name || operations.pickupAddress || 'Punto a confirmar'}</p><p className="admin-caption">{operations.pickupTime || 'Horario a confirmar'}</p></div>
+              </>}
             </div>
 
             <div className="rounded-2xl bg-gray-50 p-4">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">
+              <div className="admin-eyebrow flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">
                 <Receipt className="h-3.5 w-3.5" />
                 Precio
               </div>
@@ -1374,7 +1385,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                     </span>
                   </p>
                 ))}
-                {computedPricing && computedPricing.extrasTotalAmount > 0 ? (
+                {hideVendorSelect && computedPricing && computedPricing.extrasTotalAmount > 0 ? (
                   <p className="flex items-center justify-between gap-3 border-t border-gray-200 pt-2">
                     <span className="text-gray-500">Extras totales</span>
                     <span className="font-semibold tabular-nums text-gray-900">
@@ -1384,7 +1395,7 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                 ) : null}
                 <p className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-2.5">
                   <span className="text-sm font-bold text-gray-900">Total</span>
-                  <span className="text-[22px] font-black tabular-nums tracking-[-0.02em] text-gray-900">
+                  <span className="admin-metric text-[22px] font-black tabular-nums tracking-[-0.02em] text-gray-900">
                     {peopleTotal > 0 ? amountLabel : '—'}
                   </span>
                 </p>
@@ -1393,25 +1404,25 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
 
             <div className="divide-y divide-gray-100 rounded-2xl border border-gray-100">
               <div className="px-4 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Cliente</p>
+                <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Cliente</p>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900">
                   {`${form.customerFirstName} ${form.customerLastName}`.trim() || '—'}
                 </p>
                 <p className="text-xs text-gray-500">{form.customerEmail || '—'}</p>
-                <p className="text-xs text-gray-500">
+                {hideVendorSelect && <p className="text-xs text-gray-500">
                   {form.customerPhone ? `WhatsApp ${form.customerPhone}` : 'Sin teléfono'}
                   {' · '}
                   Nacimiento: {form.customerBirthDate || '—'}
-                </p>
+                </p>}
               </div>
-              {form.customerComments.trim() ? (
+              {hideVendorSelect && form.customerComments.trim() ? (
                 <div className="px-4 py-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Comentarios</p>
+                  <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Comentarios</p>
                   <p className="mt-0.5 whitespace-pre-line text-sm text-gray-600">{form.customerComments}</p>
                 </div>
               ) : null}
               <div className="px-4 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Comprobantes</p>
+                <p className="admin-eyebrow text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Comprobantes</p>
                 {attachments.length > 0 ? (
                   <ul className="mt-0.5 space-y-0.5 text-sm text-gray-600">
                     {attachments.map((attachment) => (
@@ -1421,13 +1432,14 @@ export default function AdminReservaForm({ paquetes, hideReferral, hideVendorSel
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-0.5 text-xs text-gray-500">Aún no cargaste comprobantes.</p>
+                  <p className="mt-0.5 text-xs text-gray-500">Sin archivos adjuntos.</p>
                 )}
               </div>
             </div>
+            {!hideVendorSelect && <Button form="manual-reservation-form" type="submit" disabled={submitting || uploadingFiles} className="admin-create-reservation w-full">{submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Guardando reserva</> : uploadingFiles ? 'Esperando archivos…' : 'Crear reserva'}</Button>}
           </CardContent>
         </Card>
-        </div>
+        </aside>
       </div>
 
       <Dialog open={seatDialogOpen} onOpenChange={(open) => setSeatDialogOpen(open)}>

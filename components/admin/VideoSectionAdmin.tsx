@@ -4,11 +4,12 @@ import { useState, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Video, Youtube, Upload, X, Loader2 } from 'lucide-react';
+import { Video, Youtube, X } from 'lucide-react';
 import { uploadVideo } from '@/lib/utils/upload';
 import { toast } from 'sonner';
+import AdminFilePicker from './AdminFilePicker';
 
-const VIDEO_ACCEPT = 'video/mp4,video/webm,video/quicktime';
+const VIDEO_ACCEPT = { 'video/mp4': ['.mp4'], 'video/webm': ['.webm'], 'video/quicktime': ['.mov'] };
 // YouTube: watch, youtu.be, embed, Shorts
 const YOUTUBE_ID_REGEX = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
 const TIKTOK_VIDEO_REGEX = /(?:tiktok\.com\/@[^/]+\/video\/|tiktok\.com\/[^/]+\/video\/)(\d+)/;
@@ -66,7 +67,6 @@ export default function VideoSectionAdmin({
   youtubeError,
 }: VideoSectionAdminProps) {
   const [tab, setTab] = useState<Tab>(videoUrl ? 'local' : youtubeVideoUrl || tiktokVideoId ? 'youtube' : 'local');
-  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   const youtubeId = getYoutubeId(youtubeVideoUrl);
@@ -120,6 +120,7 @@ export default function VideoSectionAdmin({
         toast.success('Video subido correctamente.');
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Error al subir el video.');
+        throw new Error('No se pudo subir el video. Intentá de nuevo.');
       } finally {
         setIsUploading(false);
       }
@@ -127,24 +128,6 @@ export default function VideoSectionAdmin({
     [onVideoUrlChange]
   );
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
-    },
-    [handleFiles]
-  );
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
 
   const clearLocal = () => {
     onVideoUrlChange('');
@@ -185,38 +168,7 @@ export default function VideoSectionAdmin({
       {tab === 'local' && (
         <div className="space-y-3">
           {/* Drop zone */}
-          <div
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            className={`relative rounded-xl border-2 border-dashed p-6 text-center transition ${
-              isDragging ? 'border-primary bg-primary/5' : 'border-gray-200 bg-gray-50/50 hover:border-gray-300'
-            } ${isUploading ? 'pointer-events-none opacity-70' : ''}`}
-          >
-            <input
-              type="file"
-              accept={VIDEO_ACCEPT}
-              className="absolute inset-0 cursor-pointer opacity-0"
-              disabled={isUploading}
-              onChange={(e) => {
-                const f = e.target.files;
-                if (f?.length) handleFiles(f);
-                e.target.value = '';
-              }}
-            />
-            {isUploading ? (
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                <span className="text-sm font-medium text-gray-700">Subiendo video...</span>
-              </div>
-            ) : (
-              <>
-                <Upload className="mx-auto h-10 w-10 text-gray-400" />
-                <p className="mt-2 text-sm font-medium text-gray-700">Arrastrá un video o hacé clic para elegir</p>
-                <p className="mt-1 text-xs text-gray-500">MP4, WebM · Se mostrará en el hero con autoplay</p>
-              </>
-            )}
-          </div>
+          <AdminFilePicker label="Video local" description="MP4, WebM o MOV. Se reproduce en la portada." accept={VIDEO_ACCEPT} busy={isUploading} onFilesSelected={handleFiles} processingLabel="Subiendo video…" successLabel="Video adjunto" showSelectedFiles={false} />
 
           {/* Preview local (compacto) */}
           {videoUrl && (

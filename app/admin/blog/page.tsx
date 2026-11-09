@@ -1,4 +1,5 @@
 'use client';
+import { adminDateLabel } from '@/lib/admin/dates';
 
 import { useEffect, useState } from 'react';
 import { collection, getDocs, deleteDoc, doc, orderBy, query } from 'firebase/firestore';
@@ -113,15 +114,7 @@ export default function BlogAdminPage() {
                   label: 'Publicación',
                   render: (item: BlogPost) => (
                     <span className="text-sm text-gray-600">
-                      {item.fechaPublicacion
-                        ? new Date(
-                            (item.fechaPublicacion as unknown as { seconds?: number }).seconds
-                              ? (item.fechaPublicacion as unknown as { seconds: number }).seconds * 1000
-                              : item.fechaPublicacion instanceof Date
-                              ? item.fechaPublicacion
-                              : Date.now()
-                          ).toLocaleDateString('es-AR')
-                        : 'Sin fecha'}
+                      {adminDateLabel(item.fechaPublicacion)}
                     </span>
                   ),
                 },

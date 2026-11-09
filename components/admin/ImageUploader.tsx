@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { X, Upload, Image as ImageIcon, Move } from 'lucide-react';
+import { useState } from 'react';
+import { X, Image as ImageIcon, Move } from 'lucide-react';
 import Image from 'next/image';
+import AdminFilePicker from './AdminFilePicker';
+import { IMAGE_ACCEPT, IMAGE_MAX_SIZE } from '@/lib/admin/files';
 
 interface ImageUploaderProps {
   images: string[];
@@ -19,13 +21,8 @@ export default function ImageUploader({
   label = 'Imágenes',
   description = 'Arrastra imágenes o haz clic para seleccionar',
 }: ImageUploaderProps) {
-  const [isDragging, setIsDragging] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    handleFiles(files);
-  };
 
   const handleFiles = async (files: File[]) => {
     const remainingSlots = maxImages - images.length;
@@ -33,11 +30,12 @@ export default function ImageUploader({
 
     // Convertir todos los archivos a base64 usando Promise.all
     const imagePromises = filesToAdd.map((file) => {
-      return new Promise<string>((resolve) => {
+      return new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           resolve(reader.result as string);
         };
+        reader.onerror = () => reject(new Error('No se pudo leer la imagen. Probá con otra imagen.'));
         reader.readAsDataURL(file);
       });
     });
@@ -49,26 +47,6 @@ export default function ImageUploader({
     onImagesChange([...images, ...newImages]);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files).filter((file) =>
-      file.type.startsWith('image/')
-    );
-
-    handleFiles(files);
-  };
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
 
   const removeImage = (index: number) => {
     const newImages = images.filter((_, i) => i !== index);
@@ -103,34 +81,7 @@ export default function ImageUploader({
 
       {/* Drop Zone */}
       {images.length < maxImages && (
-        <div
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          className={`relative border-2 border-dashed rounded-xl p-8 transition-all ${
-            isDragging
-              ? 'border-gray-900 bg-gray-50'
-              : 'border-gray-300 bg-gray-50/50 hover:border-gray-400'
-          }`}
-        >
-          <input
-            type="file"
-            id="image-upload"
-            multiple
-            accept="image/*"
-            onChange={handleFileSelect}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
-          <div className="text-center pointer-events-none">
-            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <p className="text-base font-medium text-gray-700 mb-1">
-              Arrastra imágenes aquí o haz clic para seleccionar
-            </p>
-            <p className="text-sm text-gray-500">
-              PNG, JPG hasta 10MB • {images.length}/{maxImages} imágenes
-            </p>
-          </div>
-        </div>
+        <AdminFilePicker label={`Seleccionar ${label.toLowerCase()}`} description={`Imágenes · ${images.length}/${maxImages} seleccionadas. Se suben al guardar.`} accept={IMAGE_ACCEPT} maxSize={IMAGE_MAX_SIZE} multiple={maxImages - images.length > 1} maxFiles={maxImages - images.length} onFilesSelected={handleFiles} processingLabel="Preparando imágenes…" successLabel="" showSelectedFiles={false} />
       )}
 
       {/* Grid de Imágenes */}
@@ -212,4 +163,3 @@ export default function ImageUploader({
     </div>
   );
 }
-

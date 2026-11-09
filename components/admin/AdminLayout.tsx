@@ -1,260 +1,98 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import {
+  SquaresFour, CalendarBlank, Compass, Buildings, Handshake, UsersThree, Users,
+  Wallet, FolderSimple, ImageSquare, Layout, Newspaper,
+  ChatsCircle, EnvelopeSimple, PaperPlaneTilt, SlidersHorizontal, BookOpenText,
+  SidebarSimple, MagnifyingGlass, ArrowUpRight, SignOut, X, CaretRight, Plus, CircleNotch,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useAuth } from '@/hooks/useAuth';
-import { Button } from '@/components/ui/button';
-import { 
-  LayoutDashboard, 
-  BookOpen,
-  Package, 
-  Newspaper,
-  Handshake,
-  FolderKanban, 
-  Image as ImageIcon,
-  LogOut, 
-  Menu, 
-  X,
-  MessageSquare,
-  Mail,
-  Loader2,
-  ChevronRight,
-  Users,
-  ShieldCheck
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { motion } from 'framer-motion';
-import { SITE_NAME } from '@/lib/constants';
-import { getBrandLogoSrc, isRemoteUrl, renderTemplate, siteConfig } from '@/lib/siteConfig';
+import { adminNavigation, isAdminNavigationActive } from '@/lib/admin/navigation';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 
-const navigation = [
-  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { name: 'Categorías', href: '/admin/categorias', icon: FolderKanban },
-  { name: 'Excursiones', href: '/admin/paquetes', icon: Package },
-  { name: 'Ventas', href: '/admin/ventas', icon: Handshake },
-  { name: 'Vendedores', href: '/admin/vendedores', icon: Users },
-  { name: 'Configuración', href: '/admin/seguridad', icon: ShieldCheck },
-  { name: 'Banners', href: '/admin/banners', icon: ImageIcon },
-  { name: 'Consultas', href: '/admin/consultas', icon: MessageSquare },
-  { name: 'Emails', href: '/admin/emails', icon: Mail },
-  { name: 'Newsletter', href: '/admin/newsletter', icon: Mail },
-  { name: 'Documentación', href: '/admin/documentacion', icon: BookOpen },
-];
+const icons: Record<string, Icon> = {
+  dashboard: SquaresFour, reservations: CalendarBlank, excursions: Compass, hotels: Buildings,
+  providers: Handshake, vendors: UsersThree, customers: Users, finance: Wallet,
+  categories: FolderSimple, banners: ImageSquare, sections: Layout,
+  blog: Newspaper, messages: ChatsCircle, emails: EnvelopeSimple, newsletter: PaperPlaneTilt,
+  settings: SlidersHorizontal, documentation: BookOpenText,
+};
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
-  const pathname = usePathname();
-  const router = useRouter();
-  const { logout, user } = useAuth();
-  const logoSrc = getBrandLogoSrc();
-  const logoAlt = renderTemplate(siteConfig.branding.logo.altTextTemplate || '{{siteName}} Logo');
+type WorkspaceProps = { children: ReactNode; pathname: string; email?: string | null; onLogout?: () => void; loggingOut?: boolean; preview?: boolean };
 
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    
-    setLoggingOut(true);
-    try {
-      await logout();
-      router.replace('/admin/login');
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error);
-    } finally {
-      setLoggingOut(false);
-    }
-  };
-
-  const matchesHref = (href: string) => {
-    if (href === '/admin/ventas') {
-      return pathname === href || pathname.startsWith(href + '/') || pathname === '/admin/reservas' || pathname.startsWith('/admin/reservas/');
-    }
-    if (href === '/admin') return pathname === href;
-    return pathname === href || pathname.startsWith(href + '/');
-  };
-
-  const currentTitle = useMemo(() => {
-    const found = navigation.find((n) => matchesHref(n.href));
-    return found?.name ?? 'Admin';
-  }, [pathname]);
+/** Presentation is separate from authentication, allowing isolated visual tests with synthetic data. */
+export function AdminWorkspace({ children, pathname, email, onLogout, loggingOut = false, preview = false }: WorkspaceProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const allItems = useMemo(() => adminNavigation.flatMap((group) => [...group.items]), []);
+  const current = allItems.find((item) => isAdminNavigationActive(pathname, item.href));
+  const subpage = current && pathname !== current.href && !['/admin/reservas', '/admin/reportes', '/admin/excursiones'].includes(pathname);
+  const lastSegment = pathname.split('/').filter(Boolean).at(-1) ?? '';
+  const subpageTitle = ['nuevo', 'nueva'].includes(lastSegment) ? 'Nuevo registro' : lastSegment === 'buscar' ? 'Búsqueda' : 'Detalle';
+  const results = allItems.filter((item) => item.label.toLocaleLowerCase('es').includes(search.toLocaleLowerCase('es')));
 
   useEffect(() => {
-    if (typeof document === 'undefined') return;
+    const saved = localStorage.getItem('baft:admin:sidebar');
+    if (saved === 'collapsed') queueMicrotask(() => setCollapsed(true));
     document.body.setAttribute('data-admin-ui', 'true');
-    return () => {
-      document.body.removeAttribute('data-admin-ui');
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setSearchOpen((open) => !open); }
+      if (event.key === 'Escape') setMobileOpen(false);
     };
+    window.addEventListener('keydown', onKey);
+    return () => { document.body.removeAttribute('data-admin-ui'); window.removeEventListener('keydown', onKey); };
   }, []);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const sidebar = sidebarRef.current;
+    const focusables = () => Array.from(sidebar?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? []).filter((element) => element.getClientRects().length > 0);
+    focusables()[0]?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || searchOpen) return;
+      const nodes = focusables(); const first = nodes[0]; const last = nodes.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', trap);
+    return () => { document.removeEventListener('keydown', trap); previous?.focus(); };
+  }, [mobileOpen, searchOpen]);
 
-  return (
-    <div className={cn('admin-scope min-h-screen bg-gray-50')}>
-      {/* Sidebar móvil */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+  const toggleCollapsed = () => setCollapsed((value) => { localStorage.setItem('baft:admin:sidebar', !value ? 'collapsed' : 'expanded'); return !value; });
+  return <div className="admin-workspace" data-collapsed={collapsed} data-mobile-open={mobileOpen}>
+    <a className="admin-skip" href="#admin-main">Saltar al contenido</a>
+    {mobileOpen && <button className="admin-mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMobileOpen(false)} />}
+    <aside ref={sidebarRef} className="admin-sidebar" aria-label="Navegación de administración">
+      <div className="admin-brand"><Link href="/admin" aria-label="BAFT — Dashboard"><span className="admin-brand-symbol">b.</span><span className="admin-brand-copy">BAFT<span>Administración</span></span></Link><button className="admin-mobile-close admin-icon-button" aria-label="Cerrar menú" onClick={() => setMobileOpen(false)}><X size={19} /></button></div>
+      <button className="admin-sidebar-search" onClick={() => { setSearch(''); setSearchOpen(true); }} title="Buscar sección (Ctrl + K)"><MagnifyingGlass size={18} /><span>Ir a una sección</span><kbd>⌘ K</kbd></button>
+      <nav className="admin-navigation">{adminNavigation.map((group) => <div className="admin-nav-group" key={group.label}><p className="admin-nav-label">{group.label}</p>{group.items.map((item) => {
+        const Glyph = icons[item.icon]; const active = isAdminNavigationActive(pathname, item.href);
+        return <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined} aria-label={item.label} aria-current={active ? 'page' : undefined} className="admin-nav-item" onClick={() => setMobileOpen(false)}><Glyph size={19} weight={active ? 'fill' : 'regular'} /><span>{item.label}</span>{active && <span className="admin-nav-dot" />}</Link>;
+      })}</div>)}</nav>
+      <div className="admin-sidebar-footer"><div className="admin-account"><span className="admin-avatar">{(email?.[0] ?? 'A').toUpperCase()}</span><span className="admin-account-copy"><strong>Administrador</strong><span>{email || 'Panel de gestión'}</span></span><button className="admin-icon-button" title="Cerrar sesión" aria-label="Cerrar sesión" disabled={loggingOut || !onLogout} onClick={onLogout}>{loggingOut ? <CircleNotch size={18} className="animate-spin" /> : <SignOut size={18} />}</button></div></div>
+    </aside>
 
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          'fixed top-0 left-0 bottom-0 w-64 bg-gray-900 text-gray-200 transform transition-transform duration-200 ease-in-out z-50',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        )}
-      >
-        <div className="h-full flex flex-col">
-          {/* Logo */}
-          <div className="h-16 flex items-center justify-between px-6 border-b border-white/10">
-            <Link href="/admin" className="flex items-center space-x-3">
-              <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10">
-                {isRemoteUrl(logoSrc) ? (
-                  <img src={logoSrc} alt={logoAlt} className="w-8 h-8 object-contain" />
-                ) : (
-                  <Image
-                    src={logoSrc}
-                    alt={logoAlt}
-                    width={40}
-                    height={40}
-                    className="w-8 h-8 object-contain"
-                  />
-                )}
-              </div>
-              <div className="flex flex-col leading-none">
-                <span className="text-[11px] text-white/70 font-semibold tracking-wide">Admin</span>
-              </div>
-            </Link>
-            <button
-              className="lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-2 relative">
-            {navigation.map((item) => {
-              const isActive = matchesHref(item.href);
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    'relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all',
-                    isActive
-                      ? 'bg-secondary text-secondary-foreground shadow'
-                      : 'text-gray-200 hover:bg-white/5'
-                  )}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  {isActive && (
-                    <motion.span
-                      layoutId="sidebar-rail"
-                      className="absolute left-0 top-1/2 h-6 -translate-y-1/2 w-1 rounded-full bg-white/90"
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                    />
-                  )}
-                  <item.icon className={cn('h-5 w-5', isActive ? 'text-secondary-foreground' : 'text-gray-400 group-hover:text-gray-200')} />
-                  <span className="font-medium">{item.name}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Logout */}
-          <div className="p-4 border-t border-white/10">
-            {user && (
-              <div className="mb-3 px-3 py-2 bg-white/5 rounded-lg">
-                <p className="text-sm text-gray-400">Conectado como:</p>
-                <p className="text-base font-medium text-white truncate">
-                  {user.email}
-                </p>
-              </div>
-            )}
-            <Button
-              variant="ghost"
-              className="w-full justify-start text-gray-200 hover:bg-white/5 hover:text-white disabled:opacity-50"
-              onClick={handleLogout}
-              disabled={loggingOut}
-            >
-              {loggingOut ? (
-                <>
-                  <Loader2 className="mr-3 h-5 w-5 animate-spin" />
-                  Cerrando...
-                </>
-              ) : (
-                <>
-                  <LogOut className="mr-3 h-5 w-5" />
-                  Cerrar sesión
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <div className="lg:pl-64">
-        {/* Header */}
-        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b">
-          <div className="h-16 flex items-center justify-between px-6">
-            <button
-              className="lg:hidden"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-6 w-6" />
-            </button>
-            <div className="flex items-center gap-4">
-              <span className="text-sm font-semibold text-gray-900">{currentTitle}</span>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/" target="_blank">
-                  Ver sitio
-                </Link>
-              </Button>
-            </div>
-          </div>
-          {/* Breadcrumbs para subnavegaciones */}
-          {(() => {
-            const parts = pathname.split('/').filter(Boolean);
-            const isSub = parts.length > 1; // incluye 'admin'
-            if (!isSub) return null;
-            const crumbs = parts.slice(0); // usar todas para contexto
-            let hrefAcc = '';
-            return (
-              <nav className="px-6 pb-3">
-                <ol className="flex flex-wrap items-center gap-1.5 text-sm text-gray-500">
-                  {crumbs.map((seg, idx) => {
-                    hrefAcc += `/${seg}`;
-                    const label = seg === 'admin'
-                      ? 'Admin'
-                      : seg.replace(/-/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
-                    const isLast = idx === crumbs.length - 1;
-                    return (
-                      <li key={`${seg}-${idx}`} className="flex items-center gap-1.5">
-                        {idx > 0 && <ChevronRight className="h-4 w-4 text-gray-300" />}
-                        {isLast ? (
-                          <span className="text-gray-700 font-medium">{label}</span>
-                        ) : (
-                          <Link href={hrefAcc} className="hover:text-gray-700 transition-colors">
-                            {label}
-                          </Link>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-              </nav>
-            );
-          })()}
-        </header>
-
-        {/* Page content */}
-        <main className="max-w-7xl mx-auto p-6">
-          {children}
-        </main>
-      </div>
+    <div className="admin-stage" inert={mobileOpen ? true : undefined}><header className="admin-topbar"><div className="admin-topbar-leading"><button className="admin-icon-button admin-desktop-toggle" title={collapsed ? 'Expandir navegación' : 'Contraer navegación'} aria-label={collapsed ? 'Expandir navegación' : 'Contraer navegación'} aria-expanded={!collapsed} onClick={toggleCollapsed}><SidebarSimple size={20} /></button><button className="admin-icon-button admin-mobile-toggle" aria-label="Abrir menú" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><SidebarSimple size={20} /></button><span className="admin-topbar-divider" /><nav aria-label="Ruta actual" className="admin-breadcrumb"><Link href="/admin">Administración</Link><CaretRight size={12} /><span>{current?.label ?? 'Administración'}</span>{subpage && <><CaretRight size={12} /><span>{subpageTitle}</span></>}</nav></div><div className="admin-topbar-actions">{preview && <span className="admin-preview-label">Vista de prueba</span>}<Link href="/" target="_blank" rel="noopener noreferrer" className="admin-site-link">Ver sitio<ArrowUpRight size={15} /></Link><span className="admin-topbar-divider" /><Link href="/admin/ventas/nueva" className="admin-quick-create"><Plus size={16} /><span>Nueva reserva</span></Link></div></header>
+      <main id="admin-main" tabIndex={-1} className="admin-content">{children}</main>
+      <footer className="admin-workspace-footer"><span>BAFT · Administración</span><span>Desarrollado por Tucs Digital</span></footer>
     </div>
-  );
+
+    <Dialog open={searchOpen} onOpenChange={setSearchOpen}><DialogContent className="admin-command" onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}><DialogTitle>Ir a una sección</DialogTitle><DialogDescription>Buscá por nombre. Acceso rápido con Ctrl / ⌘ K.</DialogDescription><div className="admin-command-input"><MagnifyingGlass size={20} /><input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Reservas, hoteles, finanzas…" aria-label="Buscar sección" /></div><nav className="admin-command-results" aria-label="Resultados de navegación">{results.map((item) => { const Glyph = icons[item.icon]; return <Link key={item.href} href={item.href} onClick={() => { setSearchOpen(false); setMobileOpen(false); }}><Glyph size={19} /><span>{item.label}</span><CaretRight size={14} /></Link>; })}{!results.length && <p>No encontramos esa sección.</p>}</nav></DialogContent></Dialog>
+  </div>;
+}
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname(); const router = useRouter(); const { logout, user } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const handleLogout = async () => { if (loggingOut) return; setLoggingOut(true); try { await logout(); router.replace('/admin/login'); } catch { toast.error('No se pudo cerrar la sesión. Intentá nuevamente.'); } finally { setLoggingOut(false); } };
+  return <AdminWorkspace pathname={pathname} email={user?.email} onLogout={() => void handleLogout()} loggingOut={loggingOut}>{children}</AdminWorkspace>;
 }

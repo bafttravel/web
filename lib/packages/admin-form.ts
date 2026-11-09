@@ -1,4 +1,5 @@
 import * as z from 'zod';
+import { packageOperationsSchema } from '@/lib/operations/schemas';
 import type { Categoria, Salida } from '@/types';
 import { normalizePackageCategoryIds } from '@/lib/packages/category-utils';
 import { extractGoogleMapsEmbedUrl } from '@/lib/packages/google-maps';
@@ -74,6 +75,7 @@ const peopleCategorySchema = z
   .refine((data) => data.max >= data.min, { message: 'El máximo no puede ser menor al mínimo', path: ['max'] });
 
 export const packageAdminFormSchema = z.object({
+  operations: packageOperationsSchema.optional(),
   titulo: z.string().min(5, 'El titulo debe tener al menos 5 caracteres').max(100, 'El titulo no puede exceder 100 caracteres').transform((val) => val.trim()),
   descripcion: z.string().max(50000, 'La descripcion es demasiado larga').transform((val) => normalizeRichTextContent(val)),
   descripcionCorta: z.string().max(160, 'La descripcion corta no puede exceder 160 caracteres').optional().or(z.literal('')).transform((val) => val?.trim() || ''),

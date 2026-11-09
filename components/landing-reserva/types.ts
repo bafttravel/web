@@ -131,6 +131,8 @@ export type ReservationEmailDelivery = {
 };
 
 export type ReservationTravelerDetails = {
+  nationality?: string;
+  diet?: string;
   firstName: string;
   lastName: string;
   age: number;
@@ -147,6 +149,7 @@ export type ReservationExtraCode =
   | 'packageAddon';
 
 export type ReservationExtraSelection = {
+  id?: string;
   code: ReservationExtraCode;
   label: string;
   amount: number;
@@ -155,6 +158,8 @@ export type ReservationExtraSelection = {
 };
 
 export type Reservation = {
+  paymentTrackingVersion?: 1;
+  operations?: import('@/lib/operations/types').ReservationOperations;
   id: string;
   // Paquete (nuevo modelo)
   packageId?: string;

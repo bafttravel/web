@@ -1,6 +1,7 @@
 import type { Timestamp } from 'firebase/firestore';
 
 export type VentaEmailJobType =
+  | 'vendedor_aviso'
   | 'cliente_confirmacion_compra'
   | 'cliente_voucher_48hs'
   | 'cliente_confirmacion'
@@ -8,6 +9,7 @@ export type VentaEmailJobType =
 export type VentaEmailJobStatus = 'pending' | 'sending' | 'sent' | 'failed';
 
 export function emailDeliveryPathForJobType(type: VentaEmailJobType): string {
+  if (type === 'vendedor_aviso') return 'emailDelivery.vendorNotification';
   if (type === 'admin_aviso') return 'emailDelivery.adminNotification';
   if (type === 'cliente_confirmacion_compra') return 'emailDelivery.customerConfirmation';
   if (type === 'cliente_voucher_48hs') return 'emailDelivery.customerVoucher';

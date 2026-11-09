@@ -1,6 +1,7 @@
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
+import { guardAdmin } from '@/lib/vendor-admin';
 
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
@@ -49,6 +50,9 @@ export async function POST(request: Request) {
     }
 
     const key = (formData.get('key') as string) || `${randomUUID()}-${file.name}`;
+    if (key.startsWith('comprobantes/')) {
+      const guard = await guardAdmin(request); if (guard instanceof NextResponse) return guard;
+    }
 
     const client = getR2Client();
     const body = Buffer.from(await file.arrayBuffer());
@@ -57,6 +61,7 @@ export async function POST(request: Request) {
       new PutObjectCommand({
         Bucket: R2_BUCKET as string,
         Key: key,
+        ...(key.startsWith('comprobantes/') ? { IfNoneMatch: '*' } : {}),
         Body: body,
         ContentType: file.type || 'application/octet-stream',
         CacheControl: 'public, max-age=31536000, immutable',
@@ -78,6 +83,7 @@ export async function DELETE(request: Request) {
     ensureR2Config();
     const payload = await request.json();
     const key = payload?.key;
+    if (typeof key === 'string' && key.startsWith('comprobantes/')) return NextResponse.json({ error: 'Los comprobantes contables no se eliminan' }, { status: 403 });
     if (!key) {
       return NextResponse.json({ error: 'Key requerida para eliminar' }, { status: 400 });
     }
@@ -94,4 +100,3 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'No se pudo borrar el archivo' }, { status: 500 });
   }
 }
-

@@ -5,8 +5,12 @@
  */
 
 import { CONTACT_INFO, SITE_NAME, SITE_DESCRIPTION, LEGAL_INFO } from '@/lib/constants';
+import { reminderHtml, reminderText } from './voucher-reminder';
 
 type ReservaEmailData = {
+  pickupAddress?: string;
+  pickupTime?: string;
+  pickupHotel?: string;
   customerName: string;
   experienceTitle: string;
   dateFormatted: string;
@@ -88,7 +92,7 @@ export function buildClienteCompraConfirmadaHtml(data: ReservaEmailData): string
         <div style="display: inline-block; background: #dcfce7; color: #166534; padding: 8px 16px; border-radius: 20px; font-size: 0.875rem; font-weight: 600; margin-bottom: 16px;">
           ✓ COMPRA CONFIRMADA
         </div>
-        <h2 style="margin:0; font-size: 1.5rem; font-weight: 800; color: #0f172a;">Recibimos tu pago</h2>
+        <h2 style="margin:0; font-size: 1.5rem; font-weight: 800; color: #0f172a;">Tu reserva está confirmada</h2>
         <p style="margin:10px 0 0; font-size: 0.9375rem; color: #64748b; line-height: 1.6;">Este email confirma tu compra y guarda tu código de reserva.</p>
       </div>
 
@@ -171,7 +175,7 @@ export function buildClienteCompraConfirmadaText(data: ReservaEmailData): string
     '',
     saludo,
     '',
-    'Recibimos tu pago. Guardá este código de reserva.',
+    'Tu reserva está confirmada. Guardá este código de reserva.',
     '',
     `Paquete: ${experienceTitle}`,
     `Fecha: ${dateFormatted}`,
@@ -187,156 +191,11 @@ export function buildClienteCompraConfirmadaText(data: ReservaEmailData): string
 }
 
 export function buildClienteVoucher48hsHtml(data: ReservaEmailData): string {
-  const {
-    customerName,
-    experienceTitle,
-    dateFormatted,
-    peopleLabel,
-    seatsLabel,
-    amountFormatted,
-    reservationCode,
-    lookupUrl,
-    sessionId,
-  } = data;
-  const saludo = customerName ? `Hola ${customerName},` : 'Hola,';
-  const code = reservationCode || sessionId;
-  const hora = 'A confirmar';
-  const punto = 'A confirmar';
-  const whatsappUrl = `https://wa.me/${CONTACT_INFO.whatsapp}?text=${encodeURIComponent(
-    `Hola ${SITE_NAME}, mi salida para ${experienceTitle} es el ${dateFormatted} a las ${hora}. Punto: ${punto}. ¿Me confirman cualquier detalle?`
-  )}`;
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Recordatorio de salida - ${SITE_NAME}</title>
-</head>
-<body style="margin:0; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; background:#f8fafc; padding: 24px;">
-  <div style="max-width: 600px; margin: 0 auto; background:#fff; border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #e2e8f0;">
-    <div style="background: linear-gradient(135deg, #0B6E4F 0%, #16A34A 100%); padding: 32px 28px; text-align: center;">
-      <h1 style="margin:0 0 8px; font-size: 1.75rem; font-weight: 800; color: #fff; letter-spacing: -0.02em;">${SITE_NAME}</h1>
-      <p style="margin:0; font-size: 0.9375rem; color: rgba(255,255,255,0.9);">Recordatorio de salida</p>
-    </div>
-
-    <div style="padding: 32px 28px;">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <div style="display: inline-block; background: #eff6ff; color: #1d4ed8; padding: 8px 16px; border-radius: 20px; font-size: 0.875rem; font-weight: 700; margin-bottom: 16px;">
-          ⏰ 48 HS ANTES
-        </div>
-        <h2 style="margin:0; font-size: 1.5rem; font-weight: 900; color: #0f172a;">Tu salida está próxima</h2>
-        <p style="margin:10px 0 0; font-size: 0.9375rem; color: #64748b; line-height: 1.6;">Revisá el horario y punto de salida.</p>
-      </div>
-
-      <p style="margin:0 0 16px; font-size: 1rem; color: #475569; line-height: 1.6;">${saludo}</p>
-
-      <div style="background:#0f172a; border-radius: 14px; padding: 18px; margin-bottom: 18px; color: #fff;">
-        <div style="font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7); font-weight: 800;">Datos de salida</div>
-        <div style="margin-top: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
-          <div style="min-width: 140px;">
-            <div style="font-size: 0.75rem; color: rgba(255,255,255,0.75);">Fecha</div>
-            <div style="font-size: 1.05rem; font-weight: 900; text-transform: capitalize;">${dateFormatted}</div>
-          </div>
-          <div style="min-width: 140px;">
-            <div style="font-size: 0.75rem; color: rgba(255,255,255,0.75);">Horario</div>
-            <div style="font-size: 1.05rem; font-weight: 900;">${hora}</div>
-          </div>
-          <div style="width: 100%; margin-top: 12px;">
-            <div style="font-size: 0.75rem; color: rgba(255,255,255,0.75);">Punto de salida</div>
-            <div style="font-size: 1.05rem; font-weight: 900;">${punto}</div>
-          </div>
-        </div>
-      </div>
-
-      <div style="background:#f8fafc; border-radius: 12px; padding: 18px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
-        <table style="width:100%; border-collapse: collapse;">
-          <tr>
-            <td style="padding: 10px 0; font-size: 0.875rem; color: #64748b; border-bottom: 1px solid #e2e8f0;">Paquete</td>
-            <td style="padding: 10px 0; font-size: 0.9375rem; font-weight: 800; color: #0f172a; text-align: right; border-bottom: 1px solid #e2e8f0;">${experienceTitle}</td>
-          </tr>
-          <tr>
-            <td style="padding: 10px 0; font-size: 0.875rem; color: #64748b; border-bottom: 1px solid #e2e8f0;">Pasajeros</td>
-            <td style="padding: 10px 0; font-size: 0.9375rem; font-weight: 800; color: #0f172a; text-align: right; border-bottom: 1px solid #e2e8f0;">${peopleLabel}</td>
-          </tr>
-          ${seatsLabel
-      ? `<tr>
-            <td style="padding: 10px 0; font-size: 0.875rem; color: #64748b; border-bottom: 1px solid #e2e8f0;">Butacas</td>
-            <td style="padding: 10px 0; font-size: 0.9375rem; font-weight: 800; color: #0f172a; text-align: right; border-bottom: 1px solid #e2e8f0;">${seatsLabel}</td>
-          </tr>`
-      : ''
-    }
-          <tr>
-            <td style="padding: 10px 0; font-size: 0.875rem; color: #64748b; border-bottom: 1px solid #e2e8f0;">Monto</td>
-            <td style="padding: 10px 0; font-size: 1rem; font-weight: 900; color: #059669; text-align: right; border-bottom: 1px solid #e2e8f0;">${amountFormatted}</td>
-          </tr>
-          <tr>
-            <td style="padding: 10px 0; font-size: 0.875rem; color: #64748b;">Código</td>
-            <td style="padding: 10px 0; font-size: 0.875rem; font-family: monospace; color: #475569; text-align: right;">${code}</td>
-          </tr>
-        </table>
-      </div>
-
-      ${lookupUrl
-      ? `<div style="background:#f1f5f9; border-radius: 12px; padding: 16px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
-        <p style="margin:0 0 8px; font-size: 0.875rem; font-weight: 800; color: #0f172a;">Consultar tu reserva</p>
-        <a href="${lookupUrl}" style="display:inline-block; background:#0B6E4F; color:#fff; padding:10px 14px; border-radius: 8px; text-decoration:none; font-weight: 800; font-size: 0.875rem;">
-          Ver estado
-        </a>
-        <p style="margin:12px 0 0; font-size: 0.75rem; color:#64748b; word-break: break-word;">${lookupUrl}</p>
-      </div>`
-      : ''
-    }
-
-      <div style="background:#fff; border: 2px solid #0B6E4F; border-radius: 12px; padding: 16px; margin-bottom: 18px;">
-        <p style="margin:0 0 8px; font-size: 0.875rem; font-weight: 900; color: #0B6E4F; text-transform: uppercase; letter-spacing: 0.05em;">Importante</p>
-        <ul style="margin:0; padding-left: 18px; font-size: 0.9375rem; color: #475569; line-height: 1.7;">
-          <li style="margin-bottom: 8px;">Llegá con anticipación.</li>
-          <li style="margin-bottom: 8px;">Tené tu código de reserva a mano.</li>
-          <li>Si necesitás modificar algo, contactanos por WhatsApp.</li>
-        </ul>
-      </div>
-
-      <div style="background:#0f172a; border-radius: 12px; padding: 16px; color: #fff;">
-        <p style="margin:0 0 8px; font-size: 0.875rem; font-weight: 900;">Soporte</p>
-        <p style="margin:0 0 12px; font-size: 0.875rem; color: rgba(255,255,255,0.85); line-height: 1.6;">Cualquier duda, escribinos por WhatsApp.</p>
-        <a href="${whatsappUrl}" style="display:inline-block; background:#22c55e; color:#052e16; padding:10px 14px; border-radius: 8px; text-decoration:none; font-weight: 900; font-size: 0.875rem;">
-          WhatsApp
-        </a>
-      </div>
-
-      <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid #e2e8f0; font-size: 0.75rem; color: #64748b; line-height: 1.7;">
-        <div>${LEGAL_INFO.legajoRnav ? `Legajo RNAV: <strong>${LEGAL_INFO.legajoRnav}</strong>` : ''}</div>
-        <div>${CONTACT_INFO.email} · ${CONTACT_INFO.telefono}</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-`;
+  return reminderHtml(data, { name: SITE_NAME, email: CONTACT_INFO.email, whatsapp: CONTACT_INFO.whatsapp });
 }
 
 export function buildClienteVoucher48hsText(data: ReservaEmailData): string {
-  const { customerName, experienceTitle, dateFormatted, peopleLabel, seatsLabel, amountFormatted, sessionId, reservationCode, lookupUrl } = data;
-  const saludo = customerName ? `Hola ${customerName},` : 'Hola,';
-  const hora = 'A confirmar';
-  const punto = 'A confirmar';
-  return [
-    `RECORDATORIO DE SALIDA (48 HS ANTES) - ${SITE_NAME}`,
-    '',
-    saludo,
-    '',
-    `Paquete: ${experienceTitle}`,
-    `Fecha: ${dateFormatted}`,
-    `Horario: ${hora}`,
-    `Punto de salida: ${punto}`,
-    `Pasajeros: ${peopleLabel}`,
-    ...(seatsLabel ? [`Butacas: ${seatsLabel}`] : []),
-    `Monto: ${amountFormatted}`,
-    `Código: ${reservationCode || sessionId}`,
-    ...(lookupUrl ? ['', `Consultar: ${lookupUrl}`] : []),
-  ].join('\n');
+  return reminderText(data, { name: SITE_NAME, email: CONTACT_INFO.email, whatsapp: CONTACT_INFO.whatsapp });
 }
 
 /** Email al cliente: VOUCHER de confirmación de reserva profesional. */

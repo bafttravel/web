@@ -1,6 +1,9 @@
 'use client';
+import AdminDatePicker from './AdminDatePicker';
 
 import { useState } from 'react';
+import PackageOperationsEditor from './PackageOperationsEditor';
+import { EMPTY_PACKAGE_OPERATIONS } from '@/lib/operations/types';
 import type { Control, FieldErrors, UseFormRegister, UseFormSetValue, UseFormWatch } from 'react-hook-form';
 import { Controller } from 'react-hook-form';
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Loader2, Plus, Trash2 } from 'lucide-react';
@@ -211,9 +214,10 @@ export default function PackageForm(props: Props) {
       ) : null}
 
       <div className="space-y-5">
-        <Card>
+        <nav className="admin-editor-nav" aria-label="Secciones de la excursión"><a href="#editor-basics">Información</a><a href="#editor-content">Contenido</a><a href="#salidas-section">Fechas y salidas</a><a href="#editor-operations">Comisiones y costos</a><a href="#editor-publication">Publicación</a><a href="#imagenes-section">Imágenes</a></nav>
+        <Card id="editor-basics">
           <CardHeader className="pb-4">
-            <CardTitle>Informacion Basica</CardTitle>
+            <CardTitle>Información de la excursión</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
@@ -496,7 +500,7 @@ export default function PackageForm(props: Props) {
                       </div>
                       <div>
                         <Label htmlFor="tarifaEspecialFechaLimite">Fecha limite *</Label>
-                        <Input id="tarifaEspecialFechaLimite" type="date" {...register('tarifaEspecialFechaLimite')} className="mt-1.5" />
+                        <Controller name="tarifaEspecialFechaLimite" control={control} render={({ field }) => <AdminDatePicker id="tarifaEspecialFechaLimite" name={field.name} ref={field.ref} value={field.value ?? ''} onValueChange={field.onChange} onBlur={field.onBlur} required className="mt-1.5" />} />
                         {errors.tarifaEspecialFechaLimite && <p className="text-base text-red-500 mt-1">{errors.tarifaEspecialFechaLimite.message}</p>}
                       </div>
                     </div>
@@ -547,7 +551,7 @@ export default function PackageForm(props: Props) {
           <CardContent className="space-y-6">
             <div className="flex items-start justify-between p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
               <div className="space-y-0.5 flex-1">
-                <Label htmlFor="destacado" className="text-lg font-medium cursor-pointer">Marcar como destacado</Label>
+                  <Label htmlFor="destacado" className="text-sm font-medium cursor-pointer">Marcar como destacado</Label>
                 <p className="text-sm text-gray-500 pr-4">Aparecera en la seccion destacados de la homepage (maximo 9)</p>
                 {destacadosCount >= 9 && destacado && (mode === 'create' || !wasDestacado) && (
                   <div className="flex items-center gap-2 mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -624,7 +628,7 @@ export default function PackageForm(props: Props) {
           </Card>
         </div>
 
-        <Card>
+        <Card id="editor-content">
           <CardHeader className="pb-4">
             <CardTitle>Condiciones</CardTitle>
           </CardHeader>
@@ -744,14 +748,15 @@ export default function PackageForm(props: Props) {
           </CardContent>
         </Card>
 
-        <Card>
+        <div id="editor-operations"><PackageOperationsEditor value={watch('operations') ?? EMPTY_PACKAGE_OPERATIONS} onChange={(value) => setValue('operations', value, { shouldDirty: true, shouldValidate: true })} />{errors.operations && <p role="alert" className="text-red-700">Revisá hoteles, proveedores y sus condiciones: no pueden estar vacíos ni repetidos y los porcentajes deben estar entre 0 y 100.</p>}</div>
+        <Card id="editor-publication">
           <CardHeader className="pb-4">
-            <CardTitle>Configuracion y Visibilidad</CardTitle>
+            <CardTitle>Configuración y publicación</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-start justify-between py-3 border-b">
               <div className="space-y-0.5">
-                <Label htmlFor="visible" className="text-lg font-medium cursor-pointer">Excursion visible</Label>
+                  <Label htmlFor="visible" className="text-sm font-medium cursor-pointer">Excursion visible</Label>
                 <p className="text-sm text-gray-500 pr-4">Activar para que sea visible en el sitio web</p>
               </div>
               <Switch id="visible" checked={visible} onCheckedChange={(checked) => setValue('visible', checked)} className="mt-0.5" />
@@ -759,7 +764,7 @@ export default function PackageForm(props: Props) {
 
             <div className="flex items-start justify-between py-3">
               <div className="space-y-0.5">
-                <Label htmlFor="ctaWhatsApp" className="text-lg font-medium cursor-pointer">Boton de WhatsApp</Label>
+                  <Label htmlFor="ctaWhatsApp" className="text-sm font-medium cursor-pointer">Boton de WhatsApp</Label>
                 <p className="text-sm text-gray-500 pr-4">Mostrar boton de contacto directo por WhatsApp en el detalle</p>
               </div>
               <Switch id="ctaWhatsApp" checked={ctaWhatsApp} onCheckedChange={(checked) => setValue('ctaWhatsApp', checked)} className="mt-0.5" />
@@ -767,7 +772,7 @@ export default function PackageForm(props: Props) {
 
             <div className="flex items-start justify-between py-3 border-t">
               <div className="space-y-0.5">
-                <Label htmlFor="reservasHabilitadas" className="text-lg font-medium cursor-pointer">Reservas habilitadas</Label>
+                  <Label htmlFor="reservasHabilitadas" className="text-sm font-medium cursor-pointer">Reservas habilitadas</Label>
                 <p className="text-sm text-gray-500 pr-4">Activa el calendario público y permite avanzar al checkout.</p>
               </div>
               <Switch
@@ -993,7 +998,7 @@ export default function PackageForm(props: Props) {
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-3 pt-4 border-t">
+        <div className="admin-editor-actions flex justify-end gap-3 pt-4 border-t">
           <Button type="button" variant="outline" asChild size="lg">
             <Link href="/admin/paquetes">Cancelar</Link>
           </Button>

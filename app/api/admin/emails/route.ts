@@ -17,6 +17,7 @@ import { requireAdminToken } from '@/lib/adminAuth';
 import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
 import { getFromEmail, isResendConfigured } from '@/lib/resend';
 import { buildEmailDeliveryState, emailDeliveryPathForJobType } from '@/lib/sales/email-jobs';
+import { currentReservationEmail } from '@/lib/operations/email-content';
 
 export const runtime = 'nodejs';
 
@@ -249,12 +250,16 @@ export async function POST(request: Request) {
   }
   try {
     const from = String(job?.from ?? getFromEmail());
+    if ((job.type === 'cliente_voucher_48hs' || job.type === 'cliente_confirmacion') && !job.reservationId) throw new Error('El recordatorio no tiene una reserva asociada');
+    const content = job.reservationId ? await currentReservationEmail(String(job.reservationId), String(job.type)) : undefined;
+    if (content?.suppressed) return NextResponse.json({ error: 'La reserva está cancelada o no existe' }, { status: 400 });
     const { data, error } = await resend.emails.send({
       from,
       to: String(job.to),
       subject: String(job.subject),
-      html: String(job.html),
-      text: job?.text ? String(job.text) : undefined,
+      html: content?.html ?? String(job.html),
+      text: content?.text ?? (job?.text ? String(job.text) : undefined),
+      attachments: content?.attachments,
       replyTo: job?.replyTo ? String(job.replyTo) : undefined,
     });
     if (error) throw new Error(typeof error === 'string' ? error : JSON.stringify(error));

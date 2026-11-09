@@ -1,4 +1,6 @@
 'use client';
+import AdminFilePicker from './AdminFilePicker';
+import { IMAGE_ACCEPT, IMAGE_MAX_SIZE } from '@/lib/admin/files';
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
@@ -260,20 +262,7 @@ export default function AddonsManager({ items, onItemsChange, disabled, currentI
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">
-                          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                          {item.image ? 'Cambiar imagen' : 'Subir imagen'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={disabled || uploading}
-                            onChange={(event) => {
-                              void handleImageFile(item.id, event.target.files?.[0]);
-                              event.target.value = '';
-                            }}
-                          />
-                        </label>
+                        <AdminFilePicker label={item.image ? 'Cambiar imagen del adicional' : 'Imagen del adicional'} description="Imágenes. Se sube al guardar la excursión." accept={IMAGE_ACCEPT} maxSize={IMAGE_MAX_SIZE} disabled={disabled} busy={uploading} onFilesSelected={async ([file]) => { await handleImageFile(item.id, file); }} processingLabel="Preparando imagen…" successLabel="" showSelectedFiles={false} />
                         {item.image ? (
                           <Button
                             type="button"

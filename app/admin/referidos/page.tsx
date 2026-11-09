@@ -7,23 +7,16 @@ import AdminPagination from '@/components/admin/AdminPagination';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Loader2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db, getAuthInstance } from '@/lib/firebase';
 import type { Vendor } from '@/types/vendor';
 import type { Reservation } from '@/components/landing-reserva/types';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge as ShadcnBadge } from '@/components/ui/badge';
+import { moneyTotalsLabel } from '@/lib/operations/currency';
+import { referralStatuses } from '@/lib/admin/referrals';
+import ReferralReservationsTable from '@/components/admin/ReferralReservationsTable';
 
 export default function ReferidosPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -67,9 +60,9 @@ export default function ReferidosPage() {
     const t = searchTerm.trim().toLowerCase();
     if (t) {
       list = list.filter(r =>
-        r.customerEmail.toLowerCase().includes(t) ||
-        r.customerName.toLowerCase().includes(t) ||
-        r.experienceTitle.toLowerCase().includes(t)
+        (r.customerEmail ?? '').toLowerCase().includes(t) ||
+        (r.customerName ?? '').toLowerCase().includes(t) ||
+        (r.packageTitle ?? r.experienceTitle ?? '').toLowerCase().includes(t)
       );
     }
     return list;
@@ -81,8 +74,8 @@ export default function ReferidosPage() {
   }, [filtered, currentPage, itemsPerPage]);
 
   const totals = useMemo(() => {
-    const totalSales = filtered.reduce((acc, r) => acc + (r.amountTotal || 0), 0);
-    const totalCommissions = filtered.reduce((acc, r) => acc + (r.referredBy?.commissionAmount || 0), 0);
+    const totalSales = moneyTotalsLabel(filtered.map((r) => ({ amount: r.amountTotal, currency: r.currency })));
+    const totalCommissions = moneyTotalsLabel(filtered.map((r) => ({ amount: r.referredBy?.commissionAmount, currency: r.referredBy?.commissionCurrency })));
     return { totalSales, totalCommissions };
   }, [filtered]);
 
@@ -146,7 +139,7 @@ export default function ReferidosPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-lg font-semibold text-gray-900 tracking-tight">Referidos</h1>
+              <h1 className="text-lg font-semibold text-gray-900 tracking-tight">Comisiones de vendedores</h1>
               <p className="mt-1 text-sm text-gray-600">Reservas con vendedor asignado y comisiones</p>
             </div>
             <div className="flex items-center gap-2">
@@ -161,7 +154,7 @@ export default function ReferidosPage() {
               <div className="flex items-center gap-2">
                 <Search className="h-4 w-4 text-gray-500" />
                 <Input
-                  placeholder="Buscar por cliente o paquete"
+                  placeholder="Buscar por cliente o excursión"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -198,10 +191,7 @@ export default function ReferidosPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="pending">Pendiente</SelectItem>
-                    <SelectItem value="accrued">Devengada</SelectItem>
-                    <SelectItem value="paid">Pagada</SelectItem>
-                    <SelectItem value="cancelled">Cancelada</SelectItem>
+                    {referralStatuses.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -222,58 +212,10 @@ export default function ReferidosPage() {
                 </div>
               ) : (
                 <>
-                  <section className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-                    <Table className="text-sm">
-                      <TableHeader className="[&_tr]:border-black/5">
-                        <TableRow className="border-black/5 hover:bg-transparent">
-                          <TableHead className="px-4">Selec</TableHead>
-                          <TableHead>Fecha</TableHead>
-                          <TableHead>Paquete</TableHead>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Vendedor</TableHead>
-                          <TableHead>Venta</TableHead>
-                          <TableHead>Comisión</TableHead>
-                          <TableHead>Estado</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {pageItems.map((r) => (
-                          <TableRow key={r.id} className="border-black/5 hover:bg-black/[0.02]">
-                            <TableCell className="px-4">
-                              <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggleSel(r.id)} />
-                            </TableCell>
-                            <TableCell>
-                              {new Date((r.createdAt as any)?.seconds ? (r.createdAt as any).seconds * 1000 : Date.now()).toLocaleDateString()}
-                            </TableCell>
-                            <TableCell className="font-medium text-gray-900">{r.experienceTitle}</TableCell>
-                            <TableCell>
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-900 truncate max-w-[220px]">{r.customerName}</div>
-                                <div className="mt-0.5 text-[11px] text-gray-500 truncate max-w-[220px]">{r.customerEmail}</div>
-                              </div>
-                            </TableCell>
-                            <TableCell>{r.referredBy?.vendorName || '-'}</TableCell>
-                            <TableCell>{(r.amountTotal / 100).toLocaleString()} {r.currency?.toUpperCase?.()}</TableCell>
-                            <TableCell>
-                              {r.referredBy ? `${(r.referredBy.commissionAmount / 100).toLocaleString()} ${r.referredBy.commissionCurrency.toUpperCase()}` : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {r.referredBy ? (
-                                <ShadcnBadge variant="outline" className="capitalize text-[11px]">
-                                  {r.referredBy.payoutStatus}
-                                </ShadcnBadge>
-                              ) : (
-                                '-'
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </section>
+                  <ReferralReservationsTable rows={pageItems} selected={selected} onToggle={toggleSel} />
                   <div className="flex items-center justify-between py-3">
                     <div className="text-sm text-gray-600">
-                      Total ventas: {(totals.totalSales / 100).toLocaleString()} | Comisiones: {(totals.totalCommissions / 100).toLocaleString()}
+                      Total ventas: {totals.totalSales} | Comisiones: {totals.totalCommissions}
                     </div>
                     <AdminPagination
                       currentPage={currentPage}

@@ -1,4 +1,5 @@
 'use client';
+import { adminDateLabel, adminTimeLabel } from '@/lib/admin/dates';
 
 import { useEffect, useState } from 'react';
 import { collection, getDocs, updateDoc, doc, orderBy, query } from 'firebase/firestore';
@@ -63,22 +64,11 @@ export default function ConsultasPage() {
   };
 
   const formatDate = (date: Date | { toDate: () => Date } | undefined) => {
-    if (!date) return 'N/A';
-    const d = typeof date === 'object' && 'toDate' in date ? date.toDate() : new Date(date);
-    return d.toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    return adminDateLabel(date);
   };
 
   const formatTime = (date: Date | { toDate: () => Date } | undefined) => {
-    if (!date) return 'N/A';
-    const d = typeof date === 'object' && 'toDate' in date ? date.toDate() : new Date(date);
-    return d.toLocaleTimeString('es-AR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return adminTimeLabel(date);
   };
 
   if (loading) {

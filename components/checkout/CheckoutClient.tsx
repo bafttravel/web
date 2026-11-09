@@ -69,6 +69,8 @@ type CheckoutFormState = {
 };
 
 type TravelerFormState = {
+  nationality: string;
+  diet: string;
   firstName: string;
   lastName: string;
   age: string;
@@ -78,6 +80,8 @@ type TravelerFormState = {
 };
 
 const EMPTY_TRAVELER: TravelerFormState = {
+  nationality: '',
+  diet: '',
   firstName: '',
   lastName: '',
   age: '',
@@ -419,6 +423,8 @@ export default function CheckoutClient({ experience, date, people, pax, pricing,
           birthDate: traveler.birthDate.trim(),
           phone: traveler.phone.trim(),
           document: traveler.document.trim(),
+          nationality: traveler.nationality.trim(),
+          diet: traveler.diet.trim(),
           travelerType: age < 18 ? 'minor' : 'adult',
         };
       });
@@ -743,6 +749,7 @@ export default function CheckoutClient({ experience, date, people, pax, pricing,
                                       />
                                       {showErrors && errors?.document ? <p className="text-xs font-semibold text-red-500">{t('requiredField')}</p> : null}
                                     </div>
+                                    <div className="space-y-1.5"><Label htmlFor={`passenger-${index}-nationality`}>{t('country')}</Label><NationalitySelect id={`passenger-${index}-nationality`} value={traveler.nationality} onChange={(nationality) => updatePassenger(index, { nationality })} placeholder={t('selectCountry')} /></div>
                                   </div>
                                 </div>
                               );

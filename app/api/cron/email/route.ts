@@ -14,6 +14,8 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { buildEmailDeliveryState, emailDeliveryPathForJobType, type VentaEmailJobType } from '@/lib/sales/email-jobs';
+import { prepareReservationOperations } from '@/lib/operations/lifecycle';
+import { currentReservationEmail } from '@/lib/operations/email-content';
 
 export const runtime = 'nodejs';
 
@@ -145,6 +147,16 @@ async function processEmailQueue(request: Request) {
     const from = job.data.from ?? getFromEmail();
 
     try {
+      let attachments: Array<{ filename: string; content: Buffer }> | undefined;
+      if ((job.data.type === 'cliente_voucher_48hs' || job.data.type === 'cliente_confirmacion') && !job.data.reservationId) throw new Error('El recordatorio no tiene una reserva asociada');
+      if (job.data.reservationId) {
+        await prepareReservationOperations(job.data.reservationId).catch((error) => console.error('[emails] operaciones:', error));
+        const content = await currentReservationEmail(job.data.reservationId, job.data.type);
+        if (content.suppressed) { await updateDoc(jobRef, { status: 'cancelled', updatedAt: Timestamp.now(), lastError: 'Envío automático desactivado o reserva cancelada' }); continue; }
+        if (content.html) job.data.html = content.html;
+        if (content.text) job.data.text = content.text;
+        attachments = content.attachments;
+      }
       if (!job.data.to || !job.data.subject || !job.data.html) {
         throw new Error('Job incompleto (to/subject/html)');
       }
@@ -155,7 +167,8 @@ async function processEmailQueue(request: Request) {
         html: job.data.html,
         text: job.data.text ?? undefined,
         replyTo: job.data.replyTo ?? undefined,
-      });
+        attachments,
+      }, { idempotencyKey: `baft-email-${job.id}` });
       if (error) {
         throw new Error(typeof error === 'string' ? error : JSON.stringify(error));
       }

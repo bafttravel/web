@@ -68,7 +68,7 @@ export default function AdminPagination({
   if (totalItems === 0) return null;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-5 px-6 bg-gradient-to-r from-gray-50 to-white border-t-2 border-gray-200">
+    <div className="admin-pagination flex flex-col sm:flex-row items-center justify-between gap-4 py-5 px-6 bg-gradient-to-r from-gray-50 to-white border-t-2 border-gray-200">
       {/* Info de resultados */}
       <div className="text-base text-gray-600">
         Mostrando <span className="font-bold text-black">{startIndex + 1}</span> a{' '}

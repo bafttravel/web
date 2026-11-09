@@ -1,4 +1,5 @@
 'use client';
+import { adminDateLabel, adminDateTimeLabel } from '@/lib/admin/dates';
 
 import { useEffect, useState, useMemo } from 'react';
 import { collection, getDocs, deleteDoc, doc, orderBy, query, updateDoc, Timestamp } from 'firebase/firestore';
@@ -119,9 +120,7 @@ export default function NewsletterPage() {
       // Preparar datos para CSV
       const csvData = subscribers.map(subscriber => ({
         Email: subscriber.email,
-        'Fecha de Suscripción': subscriber.fechaSuscripcion instanceof Date 
-          ? subscriber.fechaSuscripcion.toLocaleDateString('es-AR')
-          : new Date(subscriber.fechaSuscripcion.seconds * 1000).toLocaleDateString('es-AR'),
+        'Fecha de Suscripción': adminDateLabel(subscriber.fechaSuscripcion),
         Estado: subscriber.activo ? 'Activo' : 'Inactivo'
       }));
 
@@ -155,25 +154,7 @@ export default function NewsletterPage() {
   };
 
   const formatDate = (date: Timestamp | Date | { seconds: number; nanoseconds?: number }) => {
-    if (date instanceof Date) {
-      return date.toLocaleDateString('es-AR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    }
-    if (date && date.seconds) {
-      return new Date(date.seconds * 1000).toLocaleDateString('es-AR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    }
-    return 'Fecha inválida';
+    return adminDateTimeLabel(date);
   };
 
   if (loading) {

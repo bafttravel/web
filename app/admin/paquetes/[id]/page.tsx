@@ -2,7 +2,9 @@
 
 import { use, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { deleteField, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { operationsFetch } from '@/lib/operations/client';
+import type { PackageOperations } from '@/lib/operations/types';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadMultipleImages } from '@/lib/utils/upload';
 import { deleteBlobByKey, getBlobKeyFromUrl } from '@/lib/utils/blob';
@@ -86,6 +88,8 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
           setCurrentPackage(data);
           setWasDestacado(data.destacado); // Guardar estado original
           setValue('titulo', data.titulo);
+          const privateData = await operationsFetch<{ operations: PackageOperations }>(`/api/admin/package-operations?id=${encodeURIComponent(id)}`);
+          setValue('operations', privateData.operations);
           setValue('descripcion', data.descripcionLarga || data.descripcion);
           setValue('descripcionCorta', data.descripcionCorta || '');
           setValue('mostrarItinerario', Boolean(data.mostrarItinerario));
@@ -126,6 +130,7 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
           router.push('/admin/paquetes');
         }
       } catch (error) {
+        setCurrentPackage(null);
         console.error('Error fetching data:', error);
         toast.error('Error al cargar datos');
       } finally {
@@ -154,6 +159,7 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
   };
 
   const onSubmit = async (data: PackageAdminFormData) => {
+    if (!currentPackage || !data.operations) { toast.error('No se cargaron todas las condiciones comerciales. Recargá antes de guardar para no perder datos.'); return; }
     setSubmitState('saving');
     setSubmitMessage('Preparando los cambios para guardar...');
     if (
@@ -325,12 +331,7 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
             galeriaKeys,
           },
           existingBookingConfig: currentPackage?.bookingConfig ?? null,
-          extra: data.tarifaEspecialHabilitada
-            ? undefined
-            : {
-                precioDescuentoPrimerosCupos: deleteField(),
-                tarifaEspecialFechaLimite: deleteField(),
-              },
+          extra: undefined,
         }),
       };
 
@@ -366,7 +367,7 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
         if (prevKey && !finalAddonKeySet.has(prevKey)) keysToDelete.add(prevKey);
       });
 
-      await updateDoc(doc(db, 'paquetes', id), sanitizedData);
+      await operationsFetch('/api/admin/package-operations', { method: 'POST', body: JSON.stringify({ id, package: sanitizedData, operations: data.operations ?? { hotels: [], providers: [], costsComplete: false }, removeSpecialPrice: !data.tarifaEspecialHabilitada }) });
       const slugNew = slugify(data.titulo);
       await revalidateFrontPaths(['/excursiones', `/excursion/${slugNew}`]);
 

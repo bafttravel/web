@@ -83,7 +83,7 @@ export function AdminTestimonialsSection({
                     </div>
                     <div className="space-y-2">
                       <div>
-                        <Label className="text-[11px] text-gray-500">Nombre</Label>
+                        <Label className="text-sm text-gray-500">Nombre</Label>
                         <Input
                           placeholder="Ej: María G."
                           value={t.name}
@@ -92,7 +92,7 @@ export function AdminTestimonialsSection({
                         />
                       </div>
                       <div>
-                        <Label className="text-[11px] text-gray-500">Cita</Label>
+                        <Label className="text-sm text-gray-500">Cita</Label>
                         <Textarea
                           placeholder="Lo que dijo el viajero..."
                           value={t.quote}
@@ -102,7 +102,7 @@ export function AdminTestimonialsSection({
                         />
                       </div>
                       <div>
-                        <Label className="text-[11px] text-gray-500">Rol o país</Label>
+                        <Label className="text-sm text-gray-500">Rol o país</Label>
                         <Input
                           placeholder="Ej: Argentina"
                           value={t.role ?? ''}

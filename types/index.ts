@@ -52,6 +52,8 @@ export type SeatLayoutAmenities = {
 };
 
 export type ReservationTravelerDetails = {
+  nationality?: string;
+  diet?: string;
   firstName: string;
   lastName: string;
   age: number;
@@ -152,6 +154,7 @@ export type PaqueteItineraryStep = {
 };
 
 export interface Paquete {
+  operations?: import('@/lib/operations/types').PackageOperations;
   id: string;
   titulo: string;
   slug: string;

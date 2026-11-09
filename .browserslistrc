@@ -1,9 +1,0 @@
-# Navegadores modernos - reduce necesidad de polyfills
-# Solo navegadores con soporte completo para ES2022
-Chrome >= 92
-Firefox >= 90
-Safari >= 15.4
-Edge >= 92
-not dead
-not IE 11
-

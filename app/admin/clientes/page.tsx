@@ -1,4 +1,5 @@
 'use client';
+import { adminDateLabel } from '@/lib/admin/dates';
 
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
@@ -15,13 +16,7 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 
 const formatDate = (date: Date | { toDate: () => Date } | undefined) => {
-  if (!date) return 'N/A';
-  const d = typeof date === 'object' && 'toDate' in date ? date.toDate() : new Date(date);
-  return d.toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return adminDateLabel(date);
 };
 
 export default function ClientesPage() {

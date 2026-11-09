@@ -1,4 +1,5 @@
 'use client';
+import { adminDateTimeLabel } from '@/lib/admin/dates';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -77,18 +78,7 @@ const statusBadge = (s?: string) => {
 };
 
 const formatDateTime = (value?: string | null) => {
-  if (!value) return '—';
-  try {
-    return new Date(value).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return String(value);
-  }
+  return adminDateTimeLabel(value);
 };
 
 export default function AdminEmailsPage() {

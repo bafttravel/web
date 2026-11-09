@@ -281,6 +281,7 @@ export type ReservaPaymentEvent = {
   id: string;
   method: 'mercadopago' | 'admin' | string;
   movementType?: 'payment' | 'extra' | 'discount' | 'refund' | string;
+  collectedBy?: 'baft' | 'hotel';
   source?: 'system' | 'manual' | string;
   status: string;
   amount: number;
@@ -290,6 +291,12 @@ export type ReservaPaymentEvent = {
   occurredAt?: object | null;
   message?: string | null;
   mercadoPagoPaymentId?: string | null;
+  correctsPaymentId?: string | null;
+  correctedBy?: string | null;
+  correctionReason?: string | null;
+  correctedAt?: object | null;
+  includedInTotal?: boolean;
+  extraId?: string | null;
   createdAt: object;
   updatedAt?: object | null;
 };

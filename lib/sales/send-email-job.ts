@@ -2,6 +2,7 @@ import { Timestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { getFromEmail, isResendConfigured, resend } from '@/lib/resend';
 import { buildEmailDeliveryState, emailDeliveryPathForJobType } from '@/lib/sales/email-jobs';
+import { currentReservationEmail } from '@/lib/operations/email-content';
 
 export type SendEmailJobResult =
   | { ok: true; jobId: string; providerMessageId: string | null }
@@ -13,6 +14,7 @@ export async function sendEmailJobNow(jobId: string): Promise<SendEmailJobResult
   const snap = await getDoc(jobRef).catch(() => null);
   if (!snap?.exists()) return { ok: false, jobId, error: 'Job no encontrado', status: 404 };
   const job = snap.data() as any;
+  if (job.status === 'sent') return { ok: true, jobId, providerMessageId: job.providerMessageId ?? null };
 
   if (!isResendConfigured() || !resend) {
     return { ok: false, jobId, error: 'Resend no configurado (falta RESEND_API_KEY)', status: 500 };
@@ -22,6 +24,15 @@ export async function sendEmailJobNow(jobId: string): Promise<SendEmailJobResult
   }
 
   try {
+    let attachments: Array<{ filename: string; content: Buffer }> | undefined;
+    if ((job.type === 'cliente_voucher_48hs' || job.type === 'cliente_confirmacion') && !job.reservationId) throw new Error('El recordatorio no tiene una reserva asociada');
+    if (job.reservationId) {
+      const content = await currentReservationEmail(String(job.reservationId), String(job.type));
+      if (content.suppressed) return { ok: false, jobId, error: 'La reserva está cancelada o no existe', status: 400 };
+      if (content.html) job.html = content.html;
+      if (content.text) job.text = content.text;
+      attachments = content.attachments;
+    }
     const { data, error } = await resend.emails.send({
       from: String(job.from ?? getFromEmail()),
       to: String(job.to),
@@ -29,7 +40,8 @@ export async function sendEmailJobNow(jobId: string): Promise<SendEmailJobResult
       html: String(job.html),
       text: job.text ? String(job.text) : undefined,
       replyTo: job.replyTo ? String(job.replyTo) : undefined,
-    });
+      attachments,
+    }, { idempotencyKey: `baft-email-${jobId}` });
     if (error) throw new Error(typeof error === 'string' ? error : JSON.stringify(error));
 
     const now = Timestamp.now();

@@ -1,4 +1,5 @@
 import { Poppins } from 'next/font/google';
+import './workspace.css';
 
 const poppins = Poppins({
   subsets: ['latin'],

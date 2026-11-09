@@ -1,35 +1,31 @@
 'use client';
+import AdminDatePicker from '@/components/admin/AdminDatePicker';
+import { adminDateLabel, adminDateTimeLabel } from '@/lib/admin/dates';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
-  AlertCircle,
+  Ban,
   Calendar,
   Copy,
+  CopyPlus,
   Eye,
+  FileDown,
   Loader2,
   Mail,
-  MailCheck,
-  MoreHorizontal,
-  Paperclip,
-  Receipt,
   Search,
-  Upload,
+  Trash2,
   X,
 } from 'lucide-react';
 
-import type { ReservationAttachmentInput } from '@/lib/reservas';
 import { getPaquetes } from '@/lib/paquetes';
 import { useAuth } from '@/hooks/useAuth';
 
-import type { Reservation, ReservationStatus, ReservationAttachment } from '@/components/landing-reserva/types';
+import type { Reservation, ReservationStatus } from '@/components/landing-reserva/types';
 import type { Order, Paquete } from '@/types';
 import {
   buildVentaStatuses,
-  deriveAdminEmailStatus,
-  deriveCustomerEmailStatus,
-  deriveVoucherStatus,
   paymentMethodLabel,
 } from '@/lib/sales/status';
 
@@ -56,22 +52,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -83,27 +63,11 @@ import {
 } from '@/components/ui/alert-dialog';
 
 function formatDate(iso: string): string {
-  if (!iso || iso === 'sin-fecha') return '—';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return iso === 'sin-fecha' ? 'A coordinar' : adminDateLabel(iso);
 }
 
 function formatDateTime(date: unknown): string {
-  if (!date) return '—';
-  const d =
-    typeof date === 'string'
-      ? new Date(date)
-      : typeof date === 'object' && date !== null && 'toDate' in date
-        ? (date as { toDate: () => Date }).toDate()
-        : new Date(date as Date);
-  return d.toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return adminDateTimeLabel(date);
 }
 
 function toTimestampMs(value: unknown): number {
@@ -127,10 +91,7 @@ function formatAmount(amountTotal: number, currency: string): string {
 }
 
 function formatShortDate(iso: string): string {
-  if (!iso || iso === 'sin-fecha') return 'A coordinar';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+  return formatDate(iso);
 }
 
 function getUnitAmountFromReservation(r: Reservation): number | null {
@@ -140,30 +101,6 @@ function getUnitAmountFromReservation(r: Reservation): number | null {
     if (r.amountTotal % r.people === 0) return Math.round(r.amountTotal / r.people);
   }
   return null;
-}
-
-function buildCopyText(r: Reservation): string {
-  const title = r.experienceTitle || r.experienceSlug || '';
-  const dateLabel = formatShortDate(r.date);
-  const unitAmount = getUnitAmountFromReservation(r);
-  const lines: string[] = [];
-  lines.push(`TOUR ${title}`.trim());
-  lines.push(`📆Data: ${dateLabel}`);
-  lines.push(`🏷️Nome: ${r.customerName || '—'}`);
-  lines.push(`👨‍👩‍👧‍👧Pax: ${r.people}`);
-  if (unitAmount) {
-    lines.push(`💸Cobrar por pessoa: ${formatAmount(unitAmount, r.currency)}`);
-  } else {
-    lines.push(`💸Total: ${formatAmount(r.amountTotal, r.currency)}`);
-  }
-  lines.push('Contacto');
-  if (r.customerPhone) lines.push(r.customerPhone);
-  if (r.customerEmail) lines.push(r.customerEmail);
-  if (r.customerComments) {
-    lines.push('');
-    lines.push(r.customerComments);
-  }
-  return lines.join('\n');
 }
 
 const statusBadgeVariant: Record<
@@ -189,32 +126,10 @@ const paymentOptions = [
   { label: 'Manual', value: 'admin' },
 ] as const;
 
-function toneForJobStatus(status: string): 'default' | 'secondary' | 'outline' | 'destructive' {
-  if (status === 'sent') return 'default';
-  if (status === 'queued' || status === 'sending') return 'secondary';
-  if (status === 'failed') return 'destructive';
-  return 'outline';
-}
-
-function labelForJobStatus(status: string): string {
-  if (status === 'sent') return 'Enviado';
-  if (status === 'queued') return 'En cola';
-  if (status === 'sending') return 'Enviando';
-  if (status === 'failed') return 'Fallido';
-  return 'Sin enviar';
-}
-
-function labelForVoucherStatus(status: string): string {
-  if (status === 'sent') return 'Voucher enviado';
-  if (status === 'generated') return 'Voucher generado';
-  if (status === 'queued') return 'Voucher en cola';
-  if (status === 'failed') return 'Voucher fallido';
-  return 'Sin voucher';
-}
-
 type DialogState =
   | { type: 'none' }
   | { type: 'cancel'; reserva: Reservation }
+  | { type: 'delete'; reserva: Reservation }
   | { type: 'reprogram'; reserva: Reservation }
   | { type: 'upload'; reserva: Reservation };
 
@@ -301,9 +216,8 @@ export default function ReservasPage() {
 
   const [dialog, setDialog] = useState<DialogState>({ type: 'none' });
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-
-  const [reprogramDate, setReprogramDate] = useState('');
-  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [actionLoadingType, setActionLoadingType] = useState<'cancel' | 'pdf' | 'delete' | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   const fetchData = async (opts?: { keepLoading?: boolean }) => {
     if (!user) return;
@@ -465,31 +379,17 @@ export default function ReservasPage() {
     setStatusFilters((prev) => (prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]));
   };
 
-  const copyReserva = async (reserva: Reservation) => {
-    try {
-      const text = buildCopyText(reserva);
-      await navigator.clipboard.writeText(text);
-      toast.success('Texto copiado');
-    } catch {
-      toast.error('No pudimos copiar el texto');
-    }
-  };
-
   const updateReservation = async (payload: {
     reservationId: string;
     status?: ReservationStatus;
     note?: string;
-    date?: string;
-    attachments?: ReservationAttachmentInput[];
-    enqueueCustomerVoucherEmail?: boolean;
-    enqueueAdminNotificationEmail?: boolean;
-    sendEmailNow?: boolean;
   }) => {
     if (!user) {
       toast.error('Debés iniciar sesión para ejecutar esta acción');
       return false;
     }
     setActionLoadingId(payload.reservationId);
+    setActionLoadingType('cancel');
     try {
       const token = await user.getIdToken();
       const response = await fetch('/api/admin/reservas', {
@@ -511,113 +411,114 @@ export default function ReservasPage() {
           if (r.id !== payload.reservationId) return r;
           const next: Reservation = { ...r };
           if (payload.status) next.status = payload.status;
-          if (payload.date) next.date = payload.date;
-          if (payload.attachments?.length) {
-            const now = new Date();
-            const optimistic: ReservationAttachment[] = payload.attachments.map((a) => ({
-              id: crypto.randomUUID(),
-              url: a.url,
-              name: a.name,
-              type: a.type,
-              uploadedBy: a.uploadedBy ?? 'admin',
-              key: a.key,
-              createdAt: now,
-            }));
-            next.attachments = [...(next.attachments ?? []), ...optimistic];
-          }
           return next;
         })
       );
 
-      toast.success(payload.sendEmailNow ? 'Email enviado' : 'Venta actualizada');
+      toast.success('Venta actualizada');
       fetchData({ keepLoading: true }).catch(() => null);
       return true;
     } catch (error) {
       console.error('[Ventas] Error actualizando venta:', error);
-      toast.error(payload.sendEmailNow && error instanceof Error ? error.message : 'No pudimos actualizar la venta');
+      toast.error('No pudimos actualizar la venta');
       return false;
     } finally {
       setActionLoadingId(null);
+      setActionLoadingType(null);
     }
   };
 
   const openCancel = (reserva: Reservation) => setDialog({ type: 'cancel', reserva });
-  const openReprogram = (reserva: Reservation) => {
-    setReprogramDate(reserva.date !== 'sin-fecha' ? reserva.date : '');
-    setDialog({ type: 'reprogram', reserva });
+  const openDelete = (reserva: Reservation) => {
+    setDeleteConfirmation('');
+    setDialog({ type: 'delete', reserva });
   };
-  const openUpload = (reserva: Reservation) => {
-    setUploadFiles([]);
-    setDialog({ type: 'upload', reserva });
+
+  const downloadVoucher = async (reserva: Reservation) => {
+    if (!user) {
+      toast.error('Debés iniciar sesión para descargar el PDF');
+      return;
+    }
+    setActionLoadingId(reserva.id);
+    setActionLoadingType('pdf');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/admin/reservas/${encodeURIComponent(reserva.id)}/voucher`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error ?? 'No se pudo generar el PDF');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const reservationCode = String((reserva as any).reservationCode || reserva.id).replace(/[^\w.-]+/g, '-');
+      link.href = url;
+      link.download = `voucher-${reservationCode}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success('PDF descargado');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo descargar el PDF');
+    } finally {
+      setActionLoadingId(null);
+      setActionLoadingType(null);
+    }
+  };
+
+  const runDelete = async () => {
+    if (dialog.type !== 'delete' || !user) return;
+    const reserva = dialog.reserva;
+    setActionLoadingId(reserva.id);
+    setActionLoadingType('delete');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/admin/reservas/${encodeURIComponent(reserva.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmationCode: deleteConfirmation.trim() }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? 'No se pudo borrar la reserva');
+
+      setDialog({ type: 'none' });
+      setDeleteConfirmation('');
+      await fetchData({ keepLoading: true });
+      toast.success('Reserva eliminada', {
+        description: 'Se conservó la evidencia financiera y contable asociada.',
+      });
+      if (Number(body?.fileDeletionWarnings) > 0) {
+        toast.warning('Algunos archivos no pudieron eliminarse', {
+          description: 'La reserva fue borrada; revisá el registro del servidor para limpiar esos archivos.',
+        });
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo borrar la reserva');
+    } finally {
+      setActionLoadingId(null);
+      setActionLoadingType(null);
+    }
   };
 
   const runCancel = async () => {
     if (dialog.type !== 'cancel') return;
-    await updateReservation({
+    const updated = await updateReservation({
       reservationId: dialog.reserva.id,
       status: 'cancelled',
       note: 'Cancelada desde el panel admin',
     });
-    setDialog({ type: 'none' });
-  };
-
-  const runReprogram = async () => {
-    if (dialog.type !== 'reprogram') return;
-    const iso = reprogramDate.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-      toast.error('Ingresá una fecha válida (YYYY-MM-DD)');
-      return;
-    }
-    await updateReservation({
-      reservationId: dialog.reserva.id,
-      date: iso,
-      note: `Reprogramada a ${iso}`,
-    });
-    setDialog({ type: 'none' });
-  };
-
-  const runUpload = async () => {
-    if (dialog.type !== 'upload') return;
-    if (uploadFiles.length === 0) {
-      toast.error('Seleccioná al menos un archivo');
-      return;
-    }
-    setActionLoadingId(dialog.reserva.id);
-    try {
-      const uploads: ReservationAttachmentInput[] = [];
-      for (const file of uploadFiles) {
-        const formData = new FormData();
-        formData.append('file', file);
-        const uploadResponse = await fetch('/api/upload', { method: 'POST', body: formData });
-        if (!uploadResponse.ok) throw new Error('No se pudo subir el archivo');
-        const data = (await uploadResponse.json()) as { url: string; key?: string };
-        uploads.push({
-          url: data.url,
-          key: data.key,
-          name: file.name,
-          type: file.type,
-          uploadedBy: 'admin',
-        });
-      }
-      await updateReservation({
-        reservationId: dialog.reserva.id,
-        attachments: uploads,
-        note: 'Comprobantes agregados',
-      });
-      setDialog({ type: 'none' });
-    } catch (error) {
-      console.error('[Reservas] Error subiendo comprobantes:', error);
-      toast.error('No pudimos subir los comprobantes');
-    } finally {
-      setActionLoadingId(null);
-    }
+    if (updated) setDialog({ type: 'none' });
   };
 
   if (loading) {
     return (
       <ProtectedRoute>
         <AdminLayout>
-          <div className="mx-auto max-w-7xl space-y-5 pb-10">
+          <div className="w-full space-y-5 pb-10">
             <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-2">
                 <div className="h-6 w-32 bg-gray-200 rounded-md animate-pulse" />
@@ -651,15 +552,16 @@ export default function ReservasPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-              <Table className="text-sm">
+            <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+              <div className="overflow-x-auto">
+                <Table className="min-w-[1120px] text-sm">
                 <TableHeader className="[&_tr]:border-black/5">
                   <TableRow className="border-black/5 hover:bg-transparent">
                     <TableHead className="px-4">Paquete</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Monto</TableHead>
-                    <TableHead className="w-[120px] px-4 text-center">Acciones</TableHead>
+                    <TableHead className="min-w-[440px] px-4 text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -693,16 +595,18 @@ export default function ReservasPage() {
                           <div className="h-3 w-24 bg-gray-200 rounded-md animate-pulse" />
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="h-6 w-20 bg-gray-200 rounded-md animate-pulse" />
-                      </TableCell>
-                      <TableCell className="pr-4">
-                        <div className="ml-auto h-8 w-24 bg-gray-200 rounded-lg animate-pulse" />
+                      <TableCell className="min-w-[440px] px-4">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {[48, 76, 52, 70, 64].map((width, actionIndex) => (
+                            <div key={`action-skel-${i}-${actionIndex}`} className="h-8 rounded-lg bg-gray-200 animate-pulse" style={{ width }} />
+                          ))}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+                </Table>
+              </div>
             </section>
           </div>
         </AdminLayout>
@@ -713,7 +617,7 @@ export default function ReservasPage() {
   return (
     <ProtectedRoute>
       <AdminLayout>
-        <div className="mx-auto max-w-7xl space-y-5 pb-10">
+        <div className="w-full space-y-5 pb-10">
           <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Ventas</h1>
@@ -758,20 +662,20 @@ export default function ReservasPage() {
 
           <section className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl bg-white shadow-sm ring-1 ring-emerald-500/20 p-4">
-              <p className="text-[11px] uppercase tracking-widest text-emerald-700">Ventas de hoy</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-900">{todaySales.length}</p>
+              <p className="admin-eyebrow text-emerald-700">Ventas de hoy</p>
+              <p className="admin-metric mt-2 text-gray-900">{todaySales.length}</p>
               <p className="text-xs text-gray-500">
                 Excursiones programadas para hoy ({formatShortDate(todayIso)})
               </p>
             </div>
             <div className="rounded-2xl bg-white shadow-sm ring-1 ring-emerald-500/20 p-4">
-              <p className="text-[11px] uppercase tracking-widest text-emerald-700">Personas de hoy</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-900">{todayPeople}</p>
+              <p className="admin-eyebrow text-emerald-700">Personas de hoy</p>
+              <p className="admin-metric mt-2 text-gray-900">{todayPeople}</p>
               <p className="text-xs text-gray-500">Sumando todas las ventas de hoy</p>
             </div>
             <div className="rounded-2xl bg-white shadow-sm ring-1 ring-emerald-500/20 p-4">
-              <p className="text-[11px] uppercase tracking-widest text-emerald-700">Monto de hoy</p>
-              <p className="mt-2 text-2xl font-semibold text-gray-900">
+              <p className="admin-eyebrow text-emerald-700">Monto de hoy</p>
+              <p className="admin-metric mt-2 text-gray-900">
                 {formatAmount(todayAmount, 'ARS')}
               </p>
               <p className="text-xs text-gray-500">Ventas de hoy (todas las monedas convertidas a ARS visual)</p>
@@ -818,10 +722,10 @@ export default function ReservasPage() {
                 </SelectContent>
               </Select>
 
-              <Input
-                type="date"
+              <AdminDatePicker
+                aria-label="Filtrar por fecha de excursión"
                 value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
+                onValueChange={setFilterDate}
                 className="w-full sm:w-40 bg-white shadow-none ring-1 ring-black/5 rounded-xl"
               />
             </div>
@@ -855,15 +759,16 @@ export default function ReservasPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-            <Table className="text-sm">
+          <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+            <div className="overflow-x-auto">
+              <Table className="min-w-[1120px] text-sm">
               <TableHeader className="[&_tr]:border-black/5">
                 <TableRow className="border-black/5 hover:bg-transparent">
                   <TableHead className="px-4">Paquete</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Monto</TableHead>
-                  <TableHead className="w-[120px] px-4 text-center">Acciones</TableHead>
+                  <TableHead className="min-w-[440px] px-4 text-center">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -932,7 +837,7 @@ export default function ReservasPage() {
                             ) : null}
                           </TableCell>
 
-                          <TableCell className="w-[120px] px-4 text-center">
+                          <TableCell className="min-w-[440px] px-4 text-center">
                             <div className="mx-auto inline-flex w-full items-center justify-center">
                               <Button
                                 variant="ghost"
@@ -966,11 +871,6 @@ export default function ReservasPage() {
                         : ventaStatuses.paymentMethod === 'admin'
                           ? 'outline'
                           : 'secondary';
-                    const attachmentsCount = r.attachments?.length ?? 0;
-                    const customerEmailStatus = deriveCustomerEmailStatus(r);
-                    const adminEmailStatus = deriveAdminEmailStatus(r);
-                    const voucherStatus = deriveVoucherStatus(r);
-
                     return (
                       <TableRow key={r.id} className="border-black/5 hover:bg-black/[0.02]">
                         <TableCell className="px-4">
@@ -1037,86 +937,34 @@ export default function ReservasPage() {
                           })()}
                         </TableCell>
 
-                        <TableCell className="w-[120px] px-4 text-center">
-                          <div className="mx-auto">
-                            <Button asChild variant="ghost" size="icon-sm" className="rounded-full" title="Ver detalle">
+                        <TableCell className="min-w-[440px] px-4">
+                          <div role="group" aria-label={`Acciones para ${r.customerName || 'reserva'}`} className="flex flex-nowrap items-center justify-center gap-1.5">
+                            <Button asChild variant="outline" size="sm" className="h-8 rounded-lg px-2.5" title="Ver reserva">
                               <Link href={`/admin/ventas/${r.id}`}>
-                                <Eye className="h-4 w-4" />
+                                <Eye className="h-3.5 w-3.5" />
+                                <span>Ver</span>
                               </Link>
                             </Button>
-
-                            <span className="size-8" aria-hidden="true" />
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon-sm" className="rounded-full" title="Más acciones">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-[220px] bg-white/90 shadow-lg ring-1 ring-black/10 border border-white/70 backdrop-blur"
-                              >
-                                <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-
-                                <DropdownMenuItem onClick={() => copyReserva(r)}>
-                                  <Copy className="h-4 w-4" />
-                                  Copiar
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem onClick={() => openUpload(r)}>
-                                  <Upload className="h-4 w-4" />
-                                  Subir comprobante
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    updateReservation({
-                                      reservationId: r.id,
-                                      enqueueCustomerVoucherEmail: true,
-                                      sendEmailNow: true,
-                                    })
-                                  }
-                                >
-                                  <MailCheck className="h-4 w-4" />
-                                  Enviar voucher ahora
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    updateReservation({
-                                      reservationId: r.id,
-                                      enqueueAdminNotificationEmail: true,
-                                      sendEmailNow: true,
-                                    })
-                                  }
-                                >
-                                  <Mail className="h-4 w-4" />
-                                  Enviar aviso interno ahora
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem onClick={() => openReprogram(r)}>
-                                  <Calendar className="h-4 w-4" />
-                                  Reprogramar fecha
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator />
-
-                                <DropdownMenuItem
-                                  onClick={() => openCancel(r)}
-                                  className="text-red-600 focus:text-red-600"
-                                  disabled={isBusy}
-                                >
-                                  {isBusy ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <AlertCircle className="h-4 w-4" />
-                                  )}
-                                  Cancelar
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <Button asChild variant="outline" size="sm" className="h-8 rounded-lg px-2.5" title="Duplicar reserva">
+                              <Link href={`/admin/ventas/nueva?duplicateFrom=${encodeURIComponent(r.id)}`}>
+                                <CopyPlus className="h-3.5 w-3.5" />
+                                <span>Duplicar</span>
+                              </Link>
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-8 rounded-lg px-2.5" title="Descargar voucher PDF" disabled={isBusy} onClick={() => void downloadVoucher(r)}>
+                              {isBusy && actionLoadingType === 'pdf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+                              <span>PDF</span>
+                            </Button>
+                            {r.status !== 'cancelled' && (
+                              <Button variant="outline" size="sm" className="h-8 rounded-lg border-amber-200 px-2.5 text-amber-800 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-900" title="Anular reserva" disabled={isBusy} onClick={() => openCancel(r)}>
+                                <Ban className="h-3.5 w-3.5" />
+                                <span>Anular</span>
+                              </Button>
+                            )}
+                            <Button variant="outline" size="sm" className="h-8 rounded-lg border-rose-200 px-2.5 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" title="Borrar reserva" disabled={isBusy} onClick={() => openDelete(r)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Borrar</span>
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1124,7 +972,8 @@ export default function ReservasPage() {
                   })
                 )}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           </section>
 
           {ventasFiltradas.length > 0 && (
@@ -1140,88 +989,86 @@ export default function ReservasPage() {
         </div>
       </AdminLayout>
 
-      {/* Dialog: Upload comprobantes */}
-      <Dialog open={dialog.type === 'upload'} onOpenChange={(open) => !open && setDialog({ type: 'none' })}>
-        <DialogContent className="sm:max-w-[520px] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Subir comprobantes</DialogTitle>
-            <DialogDescription>Se guardan en Blob y se adjuntan a la venta.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <Input
-              type="file"
-              multiple
-              accept="image/*,.pdf"
-              onChange={(e) => setUploadFiles(Array.from(e.target.files ?? []))}
-              className="rounded-xl"
-            />
-            {uploadFiles.length > 0 && (
-              <div className="text-xs text-gray-500">
-                {uploadFiles.length} archivo{uploadFiles.length !== 1 ? 's' : ''} seleccionado{uploadFiles.length !== 1 ? 's' : ''}.
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDialog({ type: 'none' })}>
-              Cancelar
-            </Button>
-            <Button onClick={runUpload} disabled={dialog.type === 'upload' && actionLoadingId === dialog.reserva.id}>
-              {dialog.type === 'upload' && actionLoadingId === dialog.reserva.id ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Subiendo...
-                </>
-              ) : (
-                <>
-                  <Upload className="h-4 w-4" />
-                  Subir
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog: Reprogramar */}
-      <Dialog open={dialog.type === 'reprogram'} onOpenChange={(open) => !open && setDialog({ type: 'none' })}>
-        <DialogContent className="sm:max-w-[480px] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Reprogramar fecha</DialogTitle>
-            <DialogDescription>Actualiza la fecha de la paquete y guarda el cambio en el historial.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-xs text-gray-500">Nueva fecha</label>
-            <Input
-              type="date"
-              value={reprogramDate}
-              onChange={(e) => setReprogramDate(e.target.value)}
-              className="rounded-xl"
-            />
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDialog({ type: 'none' })}>
-              Cancelar
-            </Button>
-            <Button onClick={runReprogram}>Guardar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Alert: Cancelar */}
       <AlertDialog open={dialog.type === 'cancel'} onOpenChange={(open) => !open && setDialog({ type: 'none' })}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Cancelar la venta?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto cambia el estado a <strong>cancelled</strong> y repone cupos en stock.
+              La reserva pasará a anulada y se liberarán las butacas asociadas. El registro y su historial permanecerán disponibles.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Volver</AlertDialogCancel>
-            <AlertDialogAction onClick={runCancel} className="bg-red-600 hover:bg-red-700">
-              Cancelar venta
+            <AlertDialogCancel disabled={dialog.type === 'cancel' && actionLoadingId === dialog.reserva.id}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={dialog.type === 'cancel' && actionLoadingId === dialog.reserva.id}
+              onClick={(event) => {
+                event.preventDefault();
+                void runCancel();
+              }}
+              className="bg-amber-700 hover:bg-amber-800"
+            >
+              {dialog.type === 'cancel' && actionLoadingId === dialog.reserva.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+              Anular venta
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={dialog.type === 'delete'}
+        onOpenChange={(open) => {
+          if (!open && !(dialog.type === 'delete' && actionLoadingId === dialog.reserva.id)) {
+            setDialog({ type: 'none' });
+            setDeleteConfirmation('');
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar esta reserva definitivamente?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Se quitará de ventas y se liberarán las butacas que todavía estén asignadas a esta reserva. También se cancelarán avisos pendientes y se limpiarán sus vínculos operativos.
+                </p>
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                  Es irreversible. La evidencia financiera y contable se conservará en el archivo de auditoría; los comprobantes protegidos y las transacciones externas no se borran.
+                </p>
+                {dialog.type === 'delete' && (
+                  <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                    <p className="font-medium text-slate-900">{dialog.reserva.customerName || 'Cliente sin nombre'}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {dialog.reserva.experienceTitle || dialog.reserva.packageTitle || 'Reserva'} · código{' '}
+                      <span className="font-mono font-semibold text-slate-700">{String((dialog.reserva as any).reservationCode || dialog.reserva.id)}</span>
+                    </p>
+                  </div>
+                )}
+                <label className="block space-y-1.5 text-xs font-medium text-slate-700">
+                  Escribí el código de reserva para confirmar
+                  <Input
+                    autoComplete="off"
+                    value={deleteConfirmation}
+                    onChange={(event) => setDeleteConfirmation(event.target.value)}
+                    placeholder={dialog.type === 'delete' ? String((dialog.reserva as any).reservationCode || dialog.reserva.id) : ''}
+                    disabled={dialog.type === 'delete' && actionLoadingId === dialog.reserva.id}
+                  />
+                </label>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dialog.type === 'delete' && actionLoadingId === dialog.reserva.id}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-600"
+              disabled={dialog.type !== 'delete' || deleteConfirmation.trim() !== String((dialog.reserva as any).reservationCode || dialog.reserva.id) || actionLoadingId === dialog.reserva.id}
+              onClick={(event) => {
+                event.preventDefault();
+                void runDelete();
+              }}
+            >
+              {dialog.type === 'delete' && actionLoadingId === dialog.reserva.id && actionLoadingType === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Borrar definitivamente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

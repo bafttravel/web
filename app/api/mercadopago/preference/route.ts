@@ -17,6 +17,8 @@ import { getCountryByName } from '@/lib/countries';
 export const runtime = 'nodejs';
 
 const travelerDetailsSchema = z.object({
+  nationality: z.string().trim().max(80).optional(),
+  diet: z.string().trim().max(1000).optional(),
   firstName: z.string().min(1).max(80),
   lastName: z.string().min(1).max(80),
   age: z.number().int().min(0).max(120),
@@ -297,6 +299,8 @@ export async function POST(request: Request) {
         birthDate: String(item.birthDate ?? '').trim(),
         phone: String(item.phone ?? '').trim(),
         document: String(item.document ?? '').trim(),
+        nationality: String(item.nationality ?? '').trim(),
+        diet: String(item.diet ?? '').trim(),
         travelerType: item.travelerType === 'adult' || item.travelerType === 'minor'
           ? item.travelerType
           : ((Number(item.age) || 0) < 18 ? 'minor' : 'adult'),

@@ -6,6 +6,7 @@ import AdminLayout from '@/components/admin/AdminLayout';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Vendor } from '@/types/vendor';
+import { currencyCode } from '@/lib/operations/currency';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -323,7 +324,7 @@ export default function VendedoresPage() {
                           <TableRow key={v.id} className="border-black/5 hover:bg-black/[0.02]">
                             <TableCell className="px-4">
                               <div className="font-medium text-gray-900">{v.name}</div>
-                              <div className="mt-0.5 text-[11px] text-gray-500 break-all">
+                              <div className="admin-caption mt-0.5 text-gray-500 break-all">
                                 {v.email}
                               </div>
                             </TableCell>
@@ -339,11 +340,11 @@ export default function VendedoresPage() {
                             </TableCell>
                             <TableCell>
                               {v.active ? (
-                                <Badge variant="outline" className="gap-1 text-green-700 text-[11px]">
+                                <Badge variant="outline" className="gap-1 text-green-700">
                                   <CheckCircle2 className="h-3 w-3" /> Activo
                                 </Badge>
                               ) : (
-                                <Badge variant="outline" className="gap-1 text-gray-600 text-[11px]">
+                                <Badge variant="outline" className="gap-1 text-gray-600">
                                   <XCircle className="h-3 w-3" /> Inactivo
                                 </Badge>
                               )}
@@ -352,9 +353,9 @@ export default function VendedoresPage() {
                               <div className="text-sm text-gray-900">
                                 {v.defaultCommission.type === 'percent'
                                   ? `${v.defaultCommission.value}%`
-                                  : `${v.defaultCommission.value} ${v.defaultCommission.currency.toUpperCase()}`}
+                                  : `${v.defaultCommission.value} ${currencyCode(v.defaultCommission.currency) || 'Moneda por completar'}`}
                               </div>
-                              <div className="text-[11px] text-gray-400">
+                              <div className="admin-caption text-gray-400">
                                 {v.defaultCommission.type === 'percent'
                                   ? 'Porcentaje sobre la venta'
                                   : 'Monto fijo por reserva'}

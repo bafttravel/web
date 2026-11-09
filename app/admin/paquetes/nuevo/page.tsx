@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, addDoc, Timestamp, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { operationsFetch } from '@/lib/operations/client';
+import { collection, Timestamp, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadMultipleImages } from '@/lib/utils/upload';
 import { useForm, type FieldErrors } from 'react-hook-form';
@@ -229,7 +230,7 @@ export default function NuevoPaquetePage() {
         toast.success('Imágenes de adicionales listas', { id: 'upload-addons' });
       }
 
-      await addDoc(collection(db, 'paquetes'), sanitizedData);
+      await operationsFetch('/api/admin/package-operations', { method: 'POST', body: JSON.stringify({ package: sanitizedData, operations: data.operations ?? { hotels: [], providers: [], costsComplete: false } }) });
       await revalidateFrontPaths(['/excursiones', `/excursion/${slug}`]);
 
       toast.success('✅ Excursion creada correctamente', {

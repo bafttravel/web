@@ -1,4 +1,6 @@
 'use client';
+import AdminDatePicker from './AdminDatePicker';
+import { adminDateLabel } from '@/lib/admin/dates';
 
 import { useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
@@ -36,10 +38,8 @@ function parseIso(value: string) {
   return new Date(year, (month || 1) - 1, day || 1);
 }
 
-function formatDate(value: string, long = false) {
-  const date = parseIso(value);
-  if (!value || Number.isNaN(date.getTime())) return 'Sin fecha';
-  return date.toLocaleDateString('es-AR', long ? { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' } : { day: '2-digit', month: '2-digit', year: 'numeric' });
+function formatDate(value: string) {
+  return adminDateLabel(value);
 }
 
 function makeSalida(draft: Draft, fecha: string, id?: string): Salida {
@@ -191,7 +191,7 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
                 <Button type="button" variant="ghost" size="icon" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Mes siguiente"><ChevronRight className="h-4 w-4" /></Button>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-7 text-center text-[11px] font-medium uppercase tracking-wide text-gray-400">{['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'].map((day) => <span key={day}>{day}</span>)}</div>
+            <div className="admin-caption mt-4 grid grid-cols-7 text-center font-medium text-gray-400">{['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'].map((day) => <span key={day}>{day}</span>)}</div>
             <div className="mt-2 grid grid-cols-7 gap-1">
               {calendarDays.map((date, index) => {
                 if (!date) return <span key={`empty-${index}`} className="aspect-square" />;
@@ -209,7 +209,7 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-gray-900">Agregar fechas</p><p className="mt-1 text-xs text-gray-500">Los datos se aplican al rango elegido.</p></div>{rangeStart ? <button type="button" onClick={() => { setRangeStart(''); setRangeEnd(''); }} className="text-gray-400 hover:text-gray-700" aria-label="Limpiar selección"><X className="h-4 w-4" /></button> : null}</div>
             <div className="mt-4 space-y-3">
-              <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="salidas-desde" className="text-xs">Desde</Label><Input id="salidas-desde" type="date" min={today} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} className="mt-1 bg-white" /></div><div><Label htmlFor="salidas-hasta" className="text-xs">Hasta</Label><Input id="salidas-hasta" type="date" min={rangeStart || today} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} className="mt-1 bg-white" /></div></div>
+              <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="salidas-desde" className="text-xs">Desde</Label><AdminDatePicker id="salidas-desde" min={today} value={rangeStart} onValueChange={setRangeStart} className="mt-1" /></div><div><Label htmlFor="salidas-hasta" className="text-xs">Hasta</Label><AdminDatePicker id="salidas-hasta" min={rangeStart || today} value={rangeEnd} onValueChange={setRangeEnd} className="mt-1" /></div></div>
               <div><Label htmlFor="salidas-precio" className="text-xs">Precio por persona</Label><FormattedAmountInput id="salidas-precio" value={draft.precio} onChange={(value) => setDraft((prev) => ({ ...prev, precio: value }))} className="mt-1 bg-white" /></div>
               <div><Label htmlFor="salidas-moneda" className="text-xs">Moneda</Label><Select value={draft.moneda} onValueChange={(value: Draft['moneda']) => setDraft((prev) => ({ ...prev, moneda: value }))}><SelectTrigger id="salidas-moneda" className="mt-1 bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ARS">ARS</SelectItem><SelectItem value="USD">USD</SelectItem><SelectItem value="EUR">EUR</SelectItem></SelectContent></Select></div>
               <div><Label htmlFor="salidas-ciudad" className="text-xs">Ciudad de salida</Label><Input id="salidas-ciudad" value={draft.ciudadSalida} onChange={(event) => setDraft((prev) => ({ ...prev, ciudadSalida: event.target.value }))} className="mt-1 bg-white" placeholder="Opcional" /></div>
@@ -219,8 +219,8 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
         </div>
       ) : (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <div className="flex items-center justify-between"><p className="text-sm font-semibold text-gray-900">Editar salida · {formatDate(draft.fecha, true)}</p><Button type="button" variant="ghost" size="icon" onClick={resetEditor} aria-label="Cancelar edición"><X className="h-4 w-4" /></Button></div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3"><div><Label htmlFor="edit-fecha" className="text-xs">Ida</Label><Input id="edit-fecha" type="date" min={today} value={draft.fecha} onChange={(event) => setDraft((prev) => ({ ...prev, fecha: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-vuelta" className="text-xs">Vuelta</Label><Input id="edit-vuelta" type="date" min={draft.fecha || today} value={draft.fechaVuelta} onChange={(event) => setDraft((prev) => ({ ...prev, fechaVuelta: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-precio" className="text-xs">Precio</Label><FormattedAmountInput id="edit-precio" value={draft.precio} onChange={(value) => setDraft((prev) => ({ ...prev, precio: value }))} className="mt-1 bg-white" /></div></div>
+          <div className="flex items-center justify-between"><p className="text-sm font-semibold text-gray-900">Editar salida · {formatDate(draft.fecha)}</p><Button type="button" variant="ghost" size="icon" onClick={resetEditor} aria-label="Cancelar edición"><X className="h-4 w-4" /></Button></div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3"><div><Label htmlFor="edit-fecha" className="text-xs">Ida</Label><AdminDatePicker id="edit-fecha" min={today} value={draft.fecha} onValueChange={(fecha) => setDraft((prev) => ({ ...prev, fecha }))} className="mt-1" /></div><div><Label htmlFor="edit-vuelta" className="text-xs">Vuelta</Label><AdminDatePicker id="edit-vuelta" min={draft.fecha || today} value={draft.fechaVuelta} onValueChange={(fechaVuelta) => setDraft((prev) => ({ ...prev, fechaVuelta }))} className="mt-1" /></div><div><Label htmlFor="edit-precio" className="text-xs">Precio</Label><FormattedAmountInput id="edit-precio" value={draft.precio} onChange={(value) => setDraft((prev) => ({ ...prev, precio: value }))} className="mt-1 bg-white" /></div></div>
           <div className="mt-3 grid gap-3 md:grid-cols-2"><div><Label htmlFor="edit-ciudad" className="text-xs">Ciudad de salida</Label><Input id="edit-ciudad" value={draft.ciudadSalida} onChange={(event) => setDraft((prev) => ({ ...prev, ciudadSalida: event.target.value }))} className="mt-1 bg-white" /></div><div><Label htmlFor="edit-observaciones" className="text-xs">Observaciones</Label><Textarea id="edit-observaciones" value={draft.observaciones} onChange={(event) => setDraft((prev) => ({ ...prev, observaciones: event.target.value }))} className="mt-1 bg-white" rows={1} /></div></div>
           <div className="mt-3 flex justify-end"><Button type="button" onClick={saveEdit}>Guardar cambios</Button></div>
         </div>
@@ -270,7 +270,7 @@ export default function SalidasManager({ salidas, onSalidasChange }: Props) {
                 <div key={salida.id} className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-gray-50/80 sm:px-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-gray-900">
-                      <span>{formatDate(salida.fecha, true)}</span>
+                      <span>{formatDate(salida.fecha)}</span>
                       {salida.fechaVuelta && salida.fechaVuelta !== salida.fecha ? <span className="text-gray-400">hasta {formatDate(salida.fechaVuelta)}</span> : null}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">

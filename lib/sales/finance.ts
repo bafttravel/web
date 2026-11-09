@@ -75,6 +75,7 @@ export function computeVentaFinance(
     const movementType = normalizeFinanceMovementType(payment as ReservaPaymentEvent);
     const status = lowerStatus((payment as { status?: unknown }).status);
     const method = lowerStatus((payment as { method?: unknown }).method);
+    if (status === 'voided' || (payment as { correctedBy?: unknown }).correctedBy) continue;
 
     if (movementType === 'payment') {
       if (isPaidStatus(status)) {
@@ -101,7 +102,7 @@ export function computeVentaFinance(
     } else if (movementType === 'refund') {
       if (REFUND_OK_STATUSES.has(status) || status === 'recorded') totalPaid -= amount;
     } else if (movementType === 'extra' || movementType === 'adjustment') {
-      adjustments += amount;
+      if (!(payment as { includedInTotal?: boolean }).includedInTotal) adjustments += amount;
     } else if (movementType === 'discount') {
       adjustments -= amount;
     }
@@ -119,12 +120,13 @@ export function computeVentaFinance(
   const hasReservaPaidSignal = reservaStatus === 'completed' || Boolean(paidAt) || mpStatus === 'approved' || mpStatus === 'accredited';
 
   let paidViaReservaFallback = false;
-  if (payments.length === 0 && billedTotal > 0 && totalPaid === 0 && pendingAmount === 0 && hasReservaPaidSignal) {
+  const explicitPaymentTracking = (reserva as { paymentTrackingVersion?: unknown }).paymentTrackingVersion === 1;
+  if (!explicitPaymentTracking && payments.length === 0 && billedTotal > 0 && totalPaid === 0 && pendingAmount === 0 && hasReservaPaidSignal) {
     totalPaid = billedTotal;
     paidViaReservaFallback = true;
   }
   // Caso borde: hay docs pero ninguno contado (ej. solo "unknown") y la reserva prueba pago.
-  if (!paidViaReservaFallback && billedTotal > 0 && totalPaid === 0 && pendingAmount === 0 && payments.length > 0 && hasGatewayProof) {
+  if (!explicitPaymentTracking && !paidViaReservaFallback && billedTotal > 0 && totalPaid === 0 && pendingAmount === 0 && payments.length > 0 && hasGatewayProof) {
     totalPaid = billedTotal;
     paidViaReservaFallback = true;
   }
