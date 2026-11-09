@@ -35,6 +35,7 @@ import AdminPagination from '@/components/admin/AdminPagination';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -130,6 +131,7 @@ type DialogState =
   | { type: 'none' }
   | { type: 'cancel'; reserva: Reservation }
   | { type: 'delete'; reserva: Reservation }
+  | { type: 'bulk-delete' }
   | { type: 'reprogram'; reserva: Reservation }
   | { type: 'upload'; reserva: Reservation };
 
@@ -218,6 +220,10 @@ export default function ReservasPage() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionLoadingType, setActionLoadingType] = useState<'cancel' | 'pdf' | 'delete' | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState('');
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ completed: number; total: number } | null>(null);
 
   const fetchData = async (opts?: { keepLoading?: boolean }) => {
     if (!user) return;
@@ -346,8 +352,23 @@ export default function ReservasPage() {
     return ventasFiltradas.slice(start, start + itemsPerPage);
   }, [ventasFiltradas, currentPage, itemsPerPage]);
 
+  const selectedReservations = useMemo(
+    () => reservas.filter((reservation) => selectedReservationIds.has(reservation.id)),
+    [reservas, selectedReservationIds],
+  );
+  const selectablePageIds = ventasPaginadas
+    .filter((sale): sale is Extract<SaleRow, { kind: 'reservation' }> => sale.kind === 'reservation')
+    .map((sale) => sale.id);
+  const selectedOnPage = selectablePageIds.filter((id) => selectedReservationIds.has(id)).length;
+  const pageCheckboxState = selectablePageIds.length > 0 && selectedOnPage === selectablePageIds.length
+    ? true
+    : selectedOnPage > 0
+      ? 'indeterminate'
+      : false;
+
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedReservationIds(new Set());
   }, [searchTerm, filterPackageId, filterDate, statusFilters, paymentMethodFilter]);
 
   const totalAmount = useMemo(
@@ -377,6 +398,28 @@ export default function ReservasPage() {
 
   const toggleStatus = (status: Reservation['status']) => {
     setStatusFilters((prev) => (prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]));
+  };
+
+  const toggleReservationSelection = (reservationId: string, checked: boolean) => {
+    setSelectedReservationIds((previous) => {
+      const next = new Set(previous);
+      if (checked) next.add(reservationId);
+      else next.delete(reservationId);
+      return next;
+    });
+  };
+
+  const togglePageSelection = (checked: boolean) => {
+    setSelectedReservationIds((previous) => {
+      const next = new Set(previous);
+      selectablePageIds.forEach((id) => checked ? next.add(id) : next.delete(id));
+      return next;
+    });
+  };
+
+  const openBulkDelete = () => {
+    setBulkDeleteConfirmation('');
+    setDialog({ type: 'bulk-delete' });
   };
 
   const updateReservation = async (payload: {
@@ -487,6 +530,12 @@ export default function ReservasPage() {
 
       setDialog({ type: 'none' });
       setDeleteConfirmation('');
+      setSelectedReservationIds((previous) => {
+        if (!previous.has(reserva.id)) return previous;
+        const next = new Set(previous);
+        next.delete(reserva.id);
+        return next;
+      });
       await fetchData({ keepLoading: true });
       toast.success('Reserva eliminada', {
         description: 'Se conservó la evidencia financiera y contable asociada.',
@@ -501,6 +550,96 @@ export default function ReservasPage() {
     } finally {
       setActionLoadingId(null);
       setActionLoadingType(null);
+    }
+  };
+
+  const runBulkDelete = async () => {
+    if (dialog.type !== 'bulk-delete' || !user || selectedReservationIds.size === 0) return;
+    const ids = Array.from(selectedReservationIds);
+    const expectedConfirmation = `ELIMINAR ${ids.length}`;
+    if (bulkDeleteConfirmation.trim() !== expectedConfirmation) return;
+
+    const completedIds = new Set<string>();
+    const failures: string[] = [];
+    let fileDeletionWarnings = 0;
+    let requestError = '';
+    setBulkDeleteLoading(true);
+    setBulkDeleteProgress({ completed: 0, total: ids.length });
+
+    try {
+      const token = await user.getIdToken();
+      const chunkSize = 25;
+      for (let offset = 0; offset < ids.length; offset += chunkSize) {
+        const chunk = ids.slice(offset, offset + chunkSize);
+        setBulkDeleteProgress({ completed: offset, total: ids.length });
+        const response = await fetch('/api/admin/reservas/bulk-delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ ids: chunk, totalCount: ids.length, confirmationCode: expectedConfirmation }),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error ?? 'No se pudo completar el borrado masivo');
+
+        const resultById = new Map<string, any>(
+          (Array.isArray(body?.results) ? body.results : []).map((result: any) => [String(result.id), result]),
+        );
+        for (const id of chunk) {
+          const result = resultById.get(id);
+          if (!result) {
+            failures.push(id);
+            continue;
+          }
+          if (result.error) {
+            failures.push(id);
+            continue;
+          }
+          completedIds.add(id);
+          fileDeletionWarnings += Number(result.fileDeletionWarnings ?? 0);
+        }
+        setBulkDeleteProgress({ completed: offset + chunk.length, total: ids.length });
+      }
+    } catch (error) {
+      requestError = error instanceof Error ? error.message : 'No se pudo completar el borrado masivo';
+    } finally {
+      if (completedIds.size > 0) {
+        setSelectedReservationIds((previous) => {
+          const next = new Set(previous);
+          completedIds.forEach((id) => next.delete(id));
+          return next;
+        });
+        await fetchData({ keepLoading: true });
+      }
+      setDialog({ type: 'none' });
+      setBulkDeleteConfirmation('');
+      setBulkDeleteLoading(false);
+      setBulkDeleteProgress(null);
+    }
+
+    if (completedIds.size > 0) {
+      if (failures.length || requestError) {
+        toast.warning(`${completedIds.size} de ${ids.length} reservas procesadas`, {
+          description: `${failures.length + (requestError ? ids.length - completedIds.size - failures.length : 0)} reserva(s) no se pudieron confirmar. La selección restante se conservó para reintentar.`,
+        });
+      } else {
+        toast.success(`${completedIds.size} reservas eliminadas`, {
+          description: 'Se conservó la evidencia financiera y contable asociada.',
+        });
+      }
+    } else if (requestError) {
+      toast.error(requestError);
+    } else if (failures.length) {
+      toast.error(`No se pudieron eliminar ${failures.length} reservas`, {
+        description: 'La selección se conservó para que puedas reintentar.',
+      });
+    }
+
+    if (fileDeletionWarnings > 0) {
+      toast.warning('Algunos archivos no pudieron eliminarse', {
+        description: 'Las reservas fueron borradas; revisá el registro del servidor para limpiar esos archivos.',
+      });
     }
   };
 
@@ -554,19 +693,21 @@ export default function ReservasPage() {
 
             <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
               <div className="overflow-x-auto">
-                <Table className="min-w-[1120px] text-sm">
+                <Table className="min-w-[1040px] text-sm">
                 <TableHeader className="[&_tr]:border-black/5">
                   <TableRow className="border-black/5 hover:bg-transparent">
+                    <TableHead className="w-12 px-3" />
                     <TableHead className="px-4">Paquete</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Monto</TableHead>
-                    <TableHead className="min-w-[440px] px-4 text-center">Acciones</TableHead>
+                    <TableHead className="w-[220px] px-4 text-center">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {Array.from({ length: 8 }).map((_, i) => (
                     <TableRow key={`row-skel-${i}`} className="border-black/5">
+                      <TableCell className="px-3"><div className="mx-auto h-4 w-4 rounded border border-gray-200 bg-gray-100 animate-pulse" /></TableCell>
                       <TableCell className="px-4">
                         <div className="space-y-2">
                           <div className="h-4 w-64 bg-gray-200 rounded-md animate-pulse" />
@@ -595,10 +736,10 @@ export default function ReservasPage() {
                           <div className="h-3 w-24 bg-gray-200 rounded-md animate-pulse" />
                         </div>
                       </TableCell>
-                      <TableCell className="min-w-[440px] px-4">
+                      <TableCell className="w-[220px] px-4">
                         <div className="flex items-center justify-center gap-1.5">
-                          {[48, 76, 52, 70, 64].map((width, actionIndex) => (
-                            <div key={`action-skel-${i}-${actionIndex}`} className="h-8 rounded-lg bg-gray-200 animate-pulse" style={{ width }} />
+                          {Array.from({ length: 5 }).map((_, actionIndex) => (
+                            <div key={`action-skel-${i}-${actionIndex}`} className="h-8 w-8 rounded-lg bg-gray-200 animate-pulse" />
                           ))}
                         </div>
                       </TableCell>
@@ -760,21 +901,57 @@ export default function ReservasPage() {
           </section>
 
           <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/5 px-4 py-3">
+              <p className="text-sm text-gray-600" aria-live="polite">
+                {selectedReservationIds.size > 0
+                  ? `${selectedReservationIds.size} reserva${selectedReservationIds.size === 1 ? '' : 's'} seleccionada${selectedReservationIds.size === 1 ? '' : 's'}`
+                  : 'Seleccioná reservas para eliminarlas en lote'}
+              </p>
+              {selectedReservationIds.size > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={bulkDeleteLoading}
+                    onClick={() => setSelectedReservationIds(new Set())}
+                  >
+                    Limpiar selección
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={bulkDeleteLoading}
+                    onClick={openBulkDelete}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar seleccionadas
+                  </Button>
+                </div>
+              )}
+            </div>
             <div className="overflow-x-auto">
-              <Table className="min-w-[1120px] text-sm">
+              <Table className="min-w-[1040px] text-sm">
               <TableHeader className="[&_tr]:border-black/5">
                 <TableRow className="border-black/5 hover:bg-transparent">
+                  <TableHead className="w-12 px-3 text-center">
+                    <Checkbox
+                      aria-label="Seleccionar todas las reservas de esta página"
+                      checked={pageCheckboxState}
+                      disabled={selectablePageIds.length === 0 || bulkDeleteLoading}
+                      onCheckedChange={(checked) => togglePageSelection(checked === true)}
+                    />
+                  </TableHead>
                   <TableHead className="px-4">Paquete</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Monto</TableHead>
-                  <TableHead className="min-w-[440px] px-4 text-center">Acciones</TableHead>
+                  <TableHead className="w-[220px] px-4 text-center">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {ventasPaginadas.length === 0 ? (
                   <TableRow className="border-black/5">
-                    <TableCell colSpan={5} className="px-4 py-10 text-center text-gray-500">
+                    <TableCell colSpan={6} className="px-4 py-10 text-center text-gray-500">
                       No hay ventas para mostrar
                     </TableCell>
                   </TableRow>
@@ -786,6 +963,7 @@ export default function ReservasPage() {
 
                       return (
                         <TableRow key={`order-${order.id}`} className="border-black/5 bg-amber-50/30 hover:bg-amber-50/50">
+                          <TableCell className="px-3" aria-label="Las órdenes de pago no se pueden seleccionar para borrar" />
                           <TableCell className="px-4">
                             <div className="min-w-0">
                               <div className="font-semibold text-gray-900 truncate max-w-[320px]">
@@ -837,13 +1015,14 @@ export default function ReservasPage() {
                             ) : null}
                           </TableCell>
 
-                          <TableCell className="min-w-[440px] px-4 text-center">
+                          <TableCell className="w-[220px] px-4 text-center">
                             <div className="mx-auto inline-flex w-full items-center justify-center">
                               <Button
                                 variant="ghost"
                                 size="icon-sm"
                                 className="rounded-full"
                                 title="Copiar ID de orden"
+                                aria-label="Copiar ID de orden"
                                 onClick={async () => {
                                   try {
                                     await navigator.clipboard.writeText(order.id);
@@ -873,6 +1052,14 @@ export default function ReservasPage() {
                           : 'secondary';
                     return (
                       <TableRow key={r.id} className="border-black/5 hover:bg-black/[0.02]">
+                        <TableCell className="px-3 text-center">
+                          <Checkbox
+                            aria-label={`Seleccionar reserva ${r.customerName || r.id}`}
+                            checked={selectedReservationIds.has(r.id)}
+                            disabled={bulkDeleteLoading}
+                            onCheckedChange={(checked) => toggleReservationSelection(r.id, checked === true)}
+                          />
+                        </TableCell>
                         <TableCell className="px-4">
                           <div className="min-w-0">
                             <div className="font-semibold text-gray-900 truncate max-w-[320px]">
@@ -937,33 +1124,28 @@ export default function ReservasPage() {
                           })()}
                         </TableCell>
 
-                        <TableCell className="min-w-[440px] px-4">
+                        <TableCell className="w-[220px] px-4">
                           <div role="group" aria-label={`Acciones para ${r.customerName || 'reserva'}`} className="flex flex-nowrap items-center justify-center gap-1.5">
-                            <Button asChild variant="outline" size="sm" className="h-8 rounded-lg px-2.5" title="Ver reserva">
+                            <Button asChild variant="outline" size="icon-sm" className="rounded-lg" title="Ver reserva" aria-label="Ver reserva">
                               <Link href={`/admin/ventas/${r.id}`}>
                                 <Eye className="h-3.5 w-3.5" />
-                                <span>Ver</span>
                               </Link>
                             </Button>
-                            <Button asChild variant="outline" size="sm" className="h-8 rounded-lg px-2.5" title="Duplicar reserva">
+                            <Button asChild variant="outline" size="icon-sm" className="rounded-lg" title="Duplicar reserva" aria-label="Duplicar reserva">
                               <Link href={`/admin/ventas/nueva?duplicateFrom=${encodeURIComponent(r.id)}`}>
                                 <CopyPlus className="h-3.5 w-3.5" />
-                                <span>Duplicar</span>
                               </Link>
                             </Button>
-                            <Button variant="outline" size="sm" className="h-8 rounded-lg px-2.5" title="Descargar voucher PDF" disabled={isBusy} onClick={() => void downloadVoucher(r)}>
+                            <Button variant="outline" size="icon-sm" className="rounded-lg" title="Descargar voucher PDF" aria-label="Descargar voucher PDF" disabled={isBusy} onClick={() => void downloadVoucher(r)}>
                               {isBusy && actionLoadingType === 'pdf' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-                              <span>PDF</span>
                             </Button>
                             {r.status !== 'cancelled' && (
-                              <Button variant="outline" size="sm" className="h-8 rounded-lg border-amber-200 px-2.5 text-amber-800 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-900" title="Anular reserva" disabled={isBusy} onClick={() => openCancel(r)}>
+                              <Button variant="outline" size="icon-sm" className="rounded-lg border-amber-200 text-amber-800 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-900" title="Anular reserva" aria-label="Anular reserva" disabled={isBusy} onClick={() => openCancel(r)}>
                                 <Ban className="h-3.5 w-3.5" />
-                                <span>Anular</span>
                               </Button>
                             )}
-                            <Button variant="outline" size="sm" className="h-8 rounded-lg border-rose-200 px-2.5 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" title="Borrar reserva" disabled={isBusy} onClick={() => openDelete(r)}>
+                            <Button variant="outline" size="icon-sm" className="rounded-lg border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" title="Borrar reserva" aria-label="Borrar reserva" disabled={isBusy} onClick={() => openDelete(r)}>
                               <Trash2 className="h-3.5 w-3.5" />
-                              <span>Borrar</span>
                             </Button>
                           </div>
                         </TableCell>
@@ -1069,6 +1251,77 @@ export default function ReservasPage() {
             >
               {dialog.type === 'delete' && actionLoadingId === dialog.reserva.id && actionLoadingType === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               Borrar definitivamente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={dialog.type === 'bulk-delete'}
+        onOpenChange={(open) => {
+          if (!open && !bulkDeleteLoading) {
+            setDialog({ type: 'none' });
+            setBulkDeleteConfirmation('');
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Borrar definitivamente {selectedReservationIds.size} reserva{selectedReservationIds.size === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Se liberarán las butacas asignadas y se limpiarán los vínculos operativos. La evidencia financiera y contable quedará archivada.
+                </p>
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                  Es irreversible. Las órdenes externas y los comprobantes protegidos no se borran.
+                </p>
+                <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+                  <p className="font-medium text-slate-900">Reservas seleccionadas</p>
+                  <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                    {selectedReservations.slice(0, 5).map((reservation) => (
+                      <li key={reservation.id}>
+                        {reservation.customerName || 'Cliente sin nombre'} · {String((reservation as any).reservationCode || reservation.id)}
+                      </li>
+                    ))}
+                    {selectedReservationIds.size > 5 && (
+                      <li>y {selectedReservationIds.size - 5} reserva{selectedReservationIds.size - 5 === 1 ? '' : 's'} más</li>
+                    )}
+                  </ul>
+                </div>
+                <label className="block space-y-1.5 text-xs font-medium text-slate-700">
+                  Escribí <span className="font-mono">ELIMINAR {selectedReservationIds.size}</span> para confirmar
+                  <Input
+                    autoComplete="off"
+                    value={bulkDeleteConfirmation}
+                    onChange={(event) => setBulkDeleteConfirmation(event.target.value)}
+                    placeholder={`ELIMINAR ${selectedReservationIds.size}`}
+                    disabled={bulkDeleteLoading}
+                  />
+                </label>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleteLoading}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-600"
+              disabled={
+                selectedReservationIds.size === 0
+                || bulkDeleteConfirmation.trim() !== `ELIMINAR ${selectedReservationIds.size}`
+                || bulkDeleteLoading
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                void runBulkDelete();
+              }}
+            >
+              {bulkDeleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {bulkDeleteLoading && bulkDeleteProgress
+                ? `Eliminando ${bulkDeleteProgress.completed}/${bulkDeleteProgress.total}`
+                : 'Borrar definitivamente'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
