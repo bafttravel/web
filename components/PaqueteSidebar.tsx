@@ -478,6 +478,8 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
               ) : (
                 <Link
                   href={bookingHref}
+                  data-analytics-location="package_sidebar"
+                  data-item-slug={paquete.slug}
                   className="group mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-neutral-900 text-[15px] font-semibold tracking-[-0.01em] text-white transition-all duration-300 hover:bg-neutral-700 active:scale-[0.98]"
                 >
                   {s('book')}
@@ -489,6 +491,8 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                 href={whatsappHref}
                 target="_blank"
                 rel="noreferrer"
+                data-analytics-location="package_sidebar"
+                data-item-slug={paquete.slug}
                 className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] text-[15px] font-semibold text-white transition hover:bg-[#1EBE5A] active:scale-[0.98]"
               >
                 <WhatsAppOfficialIcon className="h-5 w-5" />
@@ -836,6 +840,8 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                         ) : (
                           <Link
                             href={bookingHref}
+                            data-analytics-location="package_sidebar"
+                            data-item-slug={paquete.slug}
                             aria-disabled={!selectedDate}
                             onClick={(event) => {
                               if (!selectedDate) event.preventDefault();
@@ -901,6 +907,8 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                           </button>
                           <Link
                             href={bookingHref}
+                            data-analytics-location="package_addons_step"
+                            data-item-slug={paquete.slug}
                             className="group flex h-12 w-full items-center justify-center gap-2 rounded-full bg-neutral-900 text-[15px] font-semibold tracking-[-0.01em] text-white transition-all duration-300 hover:bg-neutral-700 active:scale-[0.98]"
                           >
                             {s('book')}
@@ -933,6 +941,8 @@ export default function PaqueteSidebar({ paquete, bookingDates = [] }: PaqueteSi
                 href={whatsappHref}
                 target="_blank"
                 rel="noreferrer"
+                data-analytics-location="availability_tooltip"
+                data-item-slug={paquete.slug}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#2BB8BF] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#22A9B0]"
               >
                 <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">

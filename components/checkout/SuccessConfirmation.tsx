@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, CalendarDays, Check, Copy, CreditCard, Mail, MapPin, Sparkles, Ticket, Users, Wallet } from 'lucide-react';
+import { trackPurchaseWhenConsented } from '@/lib/analytics';
 
 export type SuccessConfirmationProps = {
   code?: string | null;
@@ -17,6 +18,7 @@ export type SuccessConfirmationProps = {
   extras?: string[];
   location?: string;
   slug?: string | null;
+  transactionId?: string | null;
 };
 
 function formatDate(date: string | null | undefined, locale: string, fallback: string) {
@@ -84,7 +86,19 @@ export default function SuccessConfirmation(props: SuccessConfirmationProps) {
   const locale = useLocale();
   const reduce = useReducedMotion();
   const [copied, setCopied] = useState(false);
-  const { code, title, date, people, amountTotal, currency, paymentMethod, extras = [], location, slug } = props;
+  const { code, title, date, people, amountTotal, currency, paymentMethod, extras = [], location, slug, transactionId } = props;
+
+  useEffect(() => {
+    if (!transactionId || !amountTotal || !currency) return;
+    return trackPurchaseWhenConsented({
+      transactionId,
+      valueMinor: amountTotal,
+      currency,
+      itemSlug: slug,
+      itemName: title,
+      quantity: people,
+    });
+  }, [amountTotal, currency, people, slug, title, transactionId]);
 
   const copy = async () => {
     if (!code) return;

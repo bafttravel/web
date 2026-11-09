@@ -17,6 +17,7 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/paquete',
   '/paquetes',
+  '/privacidad',
   '/registro',
   '/riodejaneiro',
   '/terminos-condiciones',

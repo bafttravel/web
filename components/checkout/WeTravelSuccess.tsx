@@ -16,6 +16,7 @@ export default function WeTravelSuccess({ intentId }: { intentId: string }) {
     return (
       <SuccessConfirmation
         code={data.reservationCode}
+        transactionId={intentId}
         title={reservation?.title || ''}
         date={reservation?.date}
         people={reservation?.people}

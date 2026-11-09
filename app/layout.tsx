@@ -8,6 +8,7 @@ import PageTransition from '@/components/PageTransition';
 import { buildPageTitle, renderTemplate, siteConfig } from '@/lib/siteConfig';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
+import AnalyticsConsentManager from '@/components/analytics/AnalyticsConsentManager';
 
 const sora = Sora({
   subsets: ['latin'],
@@ -183,6 +184,7 @@ async function RootLayoutContent({
       <body className="font-body antialiased">
         <NextIntlClientProvider locale={locale} messages={messages}>
           <SchemaOrg />
+          <AnalyticsConsentManager />
           <main id="main-content" className="relative z-0">
             <PageTransition>{children}</PageTransition>
           </main>

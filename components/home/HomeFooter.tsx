@@ -7,6 +7,7 @@ import { FaFacebook, FaInstagram } from "react-icons/fa";
 import { CONTACT_INFO, LEGAL_INFO, SITE_NAME, SOCIAL_MEDIA } from "@/lib/constants";
 import { isRemoteUrl, renderTemplate, siteConfig } from "@/lib/siteConfig";
 import { useLocale, useTranslations } from 'next-intl';
+import { OPEN_COOKIE_SETTINGS_EVENT } from '@/lib/analytics';
 
 const HOURS_EN: Array<[RegExp, string]> = [
   [/\blunes\b/gi, 'Monday'],
@@ -167,6 +168,7 @@ export default function HomeFooter() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={p('contactWhatsApp')}
+                  data-analytics-location="footer"
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-[#25D366] text-white shadow-[0_10px_24px_rgba(37,211,102,0.3)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#1EBE5D]"
                 >
                   <Phone className="h-4 w-4" aria-hidden="true" />
@@ -205,6 +207,18 @@ export default function HomeFooter() {
               <Link href={`${prefix}/terminos-condiciones`} className="text-white/82 transition-colors hover:text-white">
                 {p('terms')}
               </Link>
+              <span className="text-white/45">|</span>
+              <Link href={`${prefix}/privacidad`} className="text-white/82 transition-colors hover:text-white">
+                {locale === 'en' ? 'Privacy and cookies' : 'Privacidad y cookies'}
+              </Link>
+              <span className="text-white/45">|</span>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event(OPEN_COOKIE_SETTINGS_EVENT))}
+                className="text-white/82 transition-colors hover:text-white"
+              >
+                {locale === 'en' ? 'Cookie settings' : 'Configurar cookies'}
+              </button>
               <span className="text-white/45">|</span>
               <span className="text-white/82">{f('legajo', { number: LEGAL_INFO.legajoRnav })}</span>
             </div>

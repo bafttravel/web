@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { trackPurchaseWhenConsented } from '@/lib/analytics';
 
 type DirectState =
-  | { ok: true; reservationId?: string; reservationCode?: string; paymentStatus?: string; emailStatus?: string }
+  | { ok: true; reservationId?: string; reservationCode?: string; paymentStatus?: string; amountTotal?: number; currency?: string; emailStatus?: string }
   | { ok: false; message?: string };
 
 /**
@@ -17,9 +18,15 @@ type DirectState =
 export default function DirectVerification({
   intentId,
   paymentId,
+  itemSlug,
+  itemName,
+  quantity,
 }: {
   intentId: string;
   paymentId?: string;
+  itemSlug?: string;
+  itemName?: string;
+  quantity?: number;
 }) {
   const t = useTranslations('checkout');
   const [state, setState] = useState<DirectState | null>(null);
@@ -27,11 +34,22 @@ export default function DirectVerification({
   const triedRef = useRef(false);
 
   useEffect(() => {
+    if (!state?.ok || !state.reservationId || state.paymentStatus?.toLowerCase() !== 'approved') return;
+    return trackPurchaseWhenConsented({
+      transactionId: state.reservationId,
+      valueMinor: Number(state.amountTotal ?? 0),
+      currency: state.currency || 'ARS',
+      itemSlug,
+      itemName,
+      quantity,
+    });
+  }, [itemName, itemSlug, quantity, state]);
+
+  useEffect(() => {
     if (!intentId) return;
     if (triedRef.current) return;
     triedRef.current = true;
     let active = true;
-    setChecking(true);
     const delays = [0, 4000, 9000, 16000, 26000];
     (async () => {
       for (let i = 0; i < delays.length; i += 1) {
@@ -52,6 +70,8 @@ export default function DirectVerification({
               reservationId: String(payload.reservationId ?? ''),
               reservationCode: String(payload.reservationCode ?? ''),
               paymentStatus: String(payload.paymentStatus ?? ''),
+              amountTotal: Number(payload.amountTotal ?? 0) || 0,
+              currency: String(payload.currency ?? 'ARS'),
               emailStatus: String(payload.emailStatus ?? ''),
             });
             setChecking(false);

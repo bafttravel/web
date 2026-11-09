@@ -291,6 +291,8 @@ export async function POST(request: Request) {
         reservationId: existingReservationId,
         reservationCode: String(existing?.reservationCode ?? ''),
         paymentStatus: String(existing?.mercadoPagoStatus ?? ''),
+        amountTotal: Number(existing?.amountTotal ?? 0) || 0,
+        currency: String(existing?.currency ?? 'ars'),
         emailStatus: confirmStatus,
       });
     }
@@ -619,6 +621,8 @@ export async function POST(request: Request) {
     reservationId,
     reservationCode,
     paymentStatus: directPaymentStatus,
+    amountTotal,
+    currency,
     emailStatus: confirmSendId ? 'sent' : 'pending',
   });
 }

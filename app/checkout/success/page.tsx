@@ -329,6 +329,7 @@ export default async function CheckoutSuccessPage({
         <Navbar variant="homeMockup" reserveSpace />
         <SuccessConfirmation
           code={reservationCodeValues.map((r) => r.code).join(' · ')}
+          transactionId={orderDisplayStatus === 'paid' ? orderId : null}
           title={title}
           date={resolvedDate}
           people={Number(primaryItem?.people) || people || null}
@@ -458,7 +459,7 @@ export default async function CheckoutSuccessPage({
               initialPaymentApproved={mpReturnStatus === 'approved'}
             />
           ) : (hasSession ? <SuccessVerification sessionId={sessionId} /> : intentId ? (
-            <DirectVerification intentId={intentId} paymentId={paymentId} />
+            <DirectVerification intentId={intentId} paymentId={paymentId} itemSlug={slug} itemName={title} quantity={people} />
           ) : null)}
 
           <div className="mt-8 space-y-4">
@@ -487,7 +488,7 @@ export default async function CheckoutSuccessPage({
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Button asChild className="gap-2">
-              <Link href={whatsappHref} target="_blank" rel="noopener noreferrer">
+              <Link href={whatsappHref} target="_blank" rel="noopener noreferrer" data-analytics-location="checkout_success">
                 <MessageCircle className="h-4 w-4" />
                 {t('writeWhatsApp')}
               </Link>

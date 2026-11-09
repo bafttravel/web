@@ -9,6 +9,7 @@ export default function WhatsAppButton() {
       href={getWhatsAppLink()}
       target="_blank"
       rel="noopener noreferrer"
+      data-analytics-location="floating_button"
       initial={{ scale: 0 }}
       animate={{ scale: 1 }}
       whileHover={{ scale: 1.1 }}
