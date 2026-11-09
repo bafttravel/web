@@ -29,6 +29,7 @@ export const packageOperationsSchema = z.object({
     };
   }),
 }));
+export type PackageOperationsFormValue = z.output<typeof packageOperationsSchema>;
 export const counterpartySchema = z.object({
   kind: z.enum(['hotel', 'provider']), name: z.string().trim().min(2).max(160),
   taxId: z.string().trim().max(30), active: z.boolean(),

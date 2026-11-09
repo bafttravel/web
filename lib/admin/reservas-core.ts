@@ -1257,7 +1257,7 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
             updatedAt: now.toDate(),
           });
         }
-        if (replacementMovementRef && payload.updateAddonExtra) {
+        if (replacementMovementRef && payload.updateAddonExtra && matchingExtraMovement) {
           const currentCurrency = String(current.currency ?? 'ars').toLowerCase();
           tx.create(replacementMovementRef, {
             extraId,

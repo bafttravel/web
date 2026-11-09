@@ -1,3 +1,5 @@
+import type { PackageOperationsFormValue } from './schemas';
+
 export type MoneyCurrency = 'ARS' | 'USD' | 'BRL' | 'EUR';
 /** Amounts are integer minor units everywhere except editable rate values. */
 export type CommissionRule = {
@@ -86,7 +88,7 @@ export type LedgerEntry = {
   reversalOf: string;
 };
 export const EMPTY_RULE: CommissionRule = { type: 'percent', value: 0, currency: 'ARS' };
-export const EMPTY_PACKAGE_OPERATIONS: PackageOperations = { hotels: [], providers: [], costsComplete: false };
+export const EMPTY_PACKAGE_OPERATIONS: PackageOperationsFormValue = { hotels: [], providers: [], costsComplete: false };
 export const EMPTY_RESERVATION_OPERATIONS: ReservationOperationsInput = {
   serviceExecuted: false,
   channel: 'front',

@@ -3,7 +3,6 @@
 import { use, useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { operationsFetch } from '@/lib/operations/client';
-import type { PackageOperations } from '@/lib/operations/types';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadMultipleImages } from '@/lib/utils/upload';
@@ -88,7 +87,7 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
           setCurrentPackage(data);
           setWasDestacado(data.destacado); // Guardar estado original
           setValue('titulo', data.titulo);
-          const privateData = await operationsFetch<{ operations: PackageOperations }>(`/api/admin/package-operations?id=${encodeURIComponent(id)}`);
+          const privateData = await operationsFetch<{ operations: NonNullable<PackageAdminFormData['operations']> }>(`/api/admin/package-operations?id=${encodeURIComponent(id)}`);
           setValue('operations', privateData.operations);
           setValue('descripcion', data.descripcionLarga || data.descripcion);
           setValue('descripcionCorta', data.descripcionCorta || '');

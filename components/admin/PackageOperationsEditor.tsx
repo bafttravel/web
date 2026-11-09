@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { operationsFetch } from '@/lib/operations/client';
-import { EMPTY_RULE, type Counterparty, type PackageOperations } from '@/lib/operations/types';
+import { EMPTY_RULE, type Counterparty } from '@/lib/operations/types';
+import type { PackageOperationsFormValue } from '@/lib/operations/schemas';
 import CommissionRuleEditor from './CommissionRuleEditor';
 import { Button } from '@/components/ui/button';
 
-export default function PackageOperationsEditor({ value, onChange }: { value: PackageOperations; onChange: (value: PackageOperations) => void }) {
+export default function PackageOperationsEditor({ value, onChange }: { value: PackageOperationsFormValue; onChange: (value: PackageOperationsFormValue) => void }) {
   const [parties, setParties] = useState<Counterparty[]>([]);
   const [error, setError] = useState('');
   useEffect(() => { operationsFetch<{ counterparties: Counterparty[] }>('/api/admin/counterparties').then((d) => setParties(d.counterparties)).catch((e) => setError(e.message)); }, []);
@@ -15,7 +16,7 @@ export default function PackageOperationsEditor({ value, onChange }: { value: Pa
     {error && <p role="alert" className="text-red-700">{error}</p>}
      {value.hotels.map((row, index) => <div key={row.hotelId || index} className="space-y-3 border-b pb-4">
       <div className="flex gap-3"><select aria-label="Hotel comisionista" className="h-10 flex-1 rounded border px-2" value={row.hotelId} onChange={(e) => onChange({ ...value, hotels: value.hotels.map((r, i) => i === index ? { ...r, hotelId: e.target.value } : r) })}><option value="">Seleccioná hotel</option>{parties.filter((p) => p.kind === 'hotel' && (p.active || p.id === row.hotelId) && (!value.hotels.some((h, i) => i !== index && h.hotelId === p.id))).map((p) => <option key={p.id} value={p.id}>{p.name}{!p.active ? ' (inactivo)' : ''}</option>)}</select><Button type="button" variant="outline" onClick={() => onChange({ ...value, hotels: value.hotels.filter((_, i) => i !== index) })}>Quitar</Button></div>
-       <div className="grid gap-3 md:grid-cols-2">{([['cash', 'efectivo', 'Efectivo'], ['deposit', 'depósito / transferencia', 'Depósito / transferencia'], ['creditCard', 'tarjeta de crédito', 'Tarjeta de crédito']] as const).map(([key, label, editorLabel]) => { const rule = row[key] !== undefined ? row[key] : key === 'cash' ? null : row.bank ?? null; return <div key={key} className="space-y-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={rule === null} onChange={(e) => onChange({ ...value, hotels: value.hotels.map((r, i) => i === index ? { ...r, [key]: e.target.checked ? null : { ...EMPTY_RULE } } : r) })} />Usar comisión de {label} del hotel</label>{rule && <CommissionRuleEditor label={editorLabel} value={rule} onChange={(nextRule) => onChange({ ...value, hotels: value.hotels.map((r, i) => i === index ? { ...r, [key]: nextRule } : r) })} />}</div>; })}</div>
+        <div className="grid gap-3 md:grid-cols-2">{([['cash', 'efectivo', 'Efectivo'], ['deposit', 'depósito / transferencia', 'Depósito / transferencia'], ['creditCard', 'tarjeta de crédito', 'Tarjeta de crédito']] as const).map(([key, label, editorLabel]) => { const rule = row[key]; return <div key={key} className="space-y-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={rule === null} onChange={(e) => onChange({ ...value, hotels: value.hotels.map((r, i) => i === index ? { ...r, [key]: e.target.checked ? null : { ...EMPTY_RULE } } : r) })} />Usar comisión de {label} del hotel</label>{rule && <CommissionRuleEditor label={editorLabel} value={rule} onChange={(nextRule) => onChange({ ...value, hotels: value.hotels.map((r, i) => i === index ? { ...r, [key]: nextRule } : r) })} />}</div>; })}</div>
     </div>)}
      <Button type="button" variant="outline" onClick={() => onChange({ ...value, hotels: [...value.hotels, { hotelId: '', cash: null, deposit: null, creditCard: null }] })}>Agregar condición por hotel</Button>
     <h3 className="font-semibold">Proveedores y costos acordados</h3>
