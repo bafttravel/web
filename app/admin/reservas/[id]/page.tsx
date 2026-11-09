@@ -151,10 +151,10 @@ const financeBadge = (f: VentaFinance): 'default' | 'outline' | 'destructive' | 
   f.status === 'settled' ? 'default' : f.status === 'overpaid' ? 'secondary' : f.status === 'partial' ? 'outline' : 'outline';
 
 const emailLabel = (s: string) =>
-  s === 'sent' ? 'Enviado' : s === 'queued' ? 'En cola' : s === 'sending' ? 'Enviando' : s === 'failed' ? 'Fallido' : 'Sin enviar';
+  s === 'sent' ? 'Enviado' : s === 'queued' ? 'En cola' : s === 'sending' ? 'Enviando' : s === 'failed' ? 'Fallido' : s === 'cancelled' ? 'Cancelado' : 'Sin enviar';
 
 const voucherLabel = (s: string) =>
-  s === 'sent' ? 'Enviado' : s === 'generated' ? 'Generado' : s === 'queued' ? 'En cola' : s === 'failed' ? 'Fallido' : 'Sin voucher';
+  s === 'sent' ? 'Enviado' : s === 'generated' ? 'Generado' : s === 'queued' ? 'En cola' : s === 'failed' ? 'Fallido' : s === 'cancelled' ? 'Cancelado' : 'Sin voucher';
 
 const movementLabels: Record<PaymentMovementType, string> = {
   payment: 'Pago',

@@ -52,6 +52,7 @@ import {
   resolveReservationExtraSelections,
 } from '@/lib/packages/resolve-departure';
 import { buildReservationPricingSnapshot } from '@/lib/sales/orchestrator';
+import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 
 const COLLECTION = 'reservas';
 
@@ -371,26 +372,12 @@ async function resolveReservationReferralAssignment(params: {
   return null;
 }
 
-function computeVoucherNextAttemptAt(params: {
-  date: string;
-  now: Timestamp;
-}): Timestamp {
-  const date = String(params.date ?? '').trim();
-  if (!date || date === 'sin-fecha') return params.now;
-  const hhmm = '09:00';
-  const ts = new Date(`${date}T${hhmm}:00-03:00`).getTime();
-  if (!Number.isFinite(ts) || ts <= 0) return params.now;
-  const dueMs = ts - 48 * 60 * 60 * 1000;
-  const nowMs = params.now.toMillis();
-  if (dueMs <= nowMs + 30 * 1000) return params.now;
-  return Timestamp.fromMillis(dueMs);
-}
-
 async function enqueueReservationEmailJob(options: {
   reservationId: string;
   type: 'cliente_confirmacion_compra' | 'cliente_voucher_48hs' | 'admin_aviso';
   nextAttemptAt?: Timestamp;
   jobId?: string;
+  scheduledDepartureAtMs?: number;
 }) {
   const reservation = await getReservaById(options.reservationId);
   if (!reservation) throw new Error('Venta no encontrada');
@@ -459,6 +446,9 @@ async function enqueueReservationEmailJob(options: {
       reservationId: options.reservationId,
       now,
       nextAttemptAt: options.nextAttemptAt || now,
+      extra: typeof options.scheduledDepartureAtMs === 'number'
+        ? { scheduledDepartureAtMs: options.scheduledDepartureAtMs }
+        : undefined,
     })
   );
 
@@ -937,6 +927,24 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         note: payload.note,
       });
       if (payload.status === 'completed' || payload.status === 'cancelled') {
+        const voucherJobId = String((reservation as any).emailDelivery?.customerVoucher?.jobId ?? '');
+        if (voucherJobId) {
+          const voucherJobRef = doc(db, 'emailJobs', voucherJobId);
+          const voucherJob = await getDoc(voucherJobRef).catch(() => null);
+          const now = Timestamp.now();
+          if (voucherJob?.exists() && voucherJob.data()?.status !== 'sent') {
+            const reason = `La reserva cambió a ${payload.status}; se canceló el voucher pendiente.`;
+            await updateDoc(voucherJobRef, { status: 'cancelled', lastError: reason, updatedAt: now }).catch(() => null);
+            await updateDoc(doc(db, COLLECTION, payload.reservationId), {
+              'emailDelivery.customerVoucher.status': 'cancelled',
+              'emailDelivery.customerVoucher.error': reason,
+              voucherScheduledAt: null,
+              updatedAt: now,
+            }).catch(() => null);
+          }
+        }
+      }
+      if (payload.status === 'completed' || payload.status === 'cancelled') {
         const payoutStatus = nextPayoutStatusForReservationStatus(payload.status);
         await updateDoc(doc(db, COLLECTION, payload.reservationId), {
           'referredBy.payoutStatus': payoutStatus,
@@ -974,28 +982,57 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       const paidAt = (reservation as any).paidAt;
       const voucherAlreadySent = Boolean((reservation as any).voucherSent);
       const customerEmail = String((reservation as any).customerEmail ?? '').trim();
-      if (payload.date === 'sin-fecha') {
-        await updateDoc(doc(db, COLLECTION, payload.reservationId), {
-          voucherScheduledAt: null,
-          updatedAt: Timestamp.now(),
-        }).catch(() => null);
-      } else if (paidAt && !voucherAlreadySent && customerEmail) {
-        const now = Timestamp.now();
-        const nextAttemptAt = computeVoucherNextAttemptAt({ date: payload.date, now });
-        const existingJobId = (reservation as any).emailDelivery?.customerVoucher?.jobId;
-        const jobId = existingJobId ? String(existingJobId) : `${payload.reservationId}_cliente_voucher`;
-        await enqueueReservationEmailJob({
-          reservationId: payload.reservationId,
-          type: 'cliente_voucher_48hs',
-          nextAttemptAt,
-          jobId,
+      const resultingReservationStatus = payload.status ?? reservation.status;
+      const now = Timestamp.now();
+      const existingJobId = String((reservation as any).emailDelivery?.customerVoucher?.jobId ?? '');
+      const shouldManageVoucher = Boolean(customerEmail && (paidAt || existingJobId));
+      if (shouldManageVoucher) {
+        const schedule = calculateVoucherReminderSchedule({
+          date: payload.date,
+          departureTime: (reservation as any).operations?.pickupTime || (reservation as any).departureTime,
+          timeZone: (reservation as any).timeZone ?? (reservation as any).timezone,
+          nowMs: now.toMillis(),
         });
-        await updateDoc(doc(db, COLLECTION, payload.reservationId), {
-          voucherScheduledAt: nextAttemptAt,
-          voucherSent: false,
-          voucherSentAt: null,
-          updatedAt: now,
-        }).catch(() => null);
+        const previousJobRef = existingJobId ? doc(db, 'emailJobs', existingJobId) : null;
+        const previousJob = previousJobRef ? await getDoc(previousJobRef).catch(() => null) : null;
+        const previousWasSent = voucherAlreadySent || previousJob?.data()?.status === 'sent';
+
+        if (schedule.kind === 'scheduled' && resultingReservationStatus === 'reserved') {
+          const nextAttemptAt = Timestamp.fromMillis(schedule.nextAttemptAtMs);
+          const jobId = previousWasSent
+            ? `${payload.reservationId}_cliente_voucher_48hs_${schedule.departureAtMs}`
+            : existingJobId || `${payload.reservationId}_cliente_voucher`;
+          await enqueueReservationEmailJob({
+            reservationId: payload.reservationId,
+            type: 'cliente_voucher_48hs',
+            nextAttemptAt,
+            jobId,
+            scheduledDepartureAtMs: schedule.departureAtMs,
+          });
+          await updateDoc(doc(db, COLLECTION, payload.reservationId), {
+            voucherScheduledAt: nextAttemptAt,
+            voucherSent: false,
+            voucherSentAt: null,
+            updatedAt: now,
+          }).catch(() => null);
+        } else {
+          const reason = schedule.kind === 'skipped'
+            ? schedule.reason === 'departure_already_passed'
+              ? 'La salida ya ocurrió; se canceló el recordatorio vencido.'
+              : 'No hay una fecha y hora de salida válidas para programar el voucher.'
+            : 'La reserva ya no está activa.';
+          if (previousJobRef && previousJob?.data()?.status !== 'sent') {
+            await updateDoc(previousJobRef, { status: 'cancelled', lastError: reason, updatedAt: now }).catch(() => null);
+          }
+          await updateDoc(doc(db, COLLECTION, payload.reservationId), {
+            voucherScheduledAt: null,
+            voucherSent: false,
+            voucherSentAt: null,
+            'emailDelivery.customerVoucher.status': 'cancelled',
+            'emailDelivery.customerVoucher.error': reason,
+            updatedAt: now,
+          }).catch(() => null);
+        }
       }
     }
     if (payload.updateCustomer) {
@@ -1363,7 +1400,7 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
     await syncReservationPayoutStatus(payload.reservationId).catch(() => null);
     await prepareReservationOperations(payload.reservationId, true).catch((error) => console.error('[reservas] preparación de avisos:', error));
 
-    const emailResults: Array<{ type: string; sent: boolean; error?: string }> = [];
+    const emailResults: Array<{ type: string; sent: boolean; deferred?: boolean; error?: string }> = [];
     const queueEmail = async (type: 'cliente_voucher_48hs' | 'admin_aviso') => {
       const jobId = await enqueueReservationEmailJob({ reservationId: payload.reservationId, type });
       if (!payload.sendEmailNow) {
@@ -1371,7 +1408,9 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
         return;
       }
       const result = await sendEmailJobNow(jobId);
-      emailResults.push(result.ok ? { type, sent: true } : { type, sent: false, error: result.error });
+      if (!result.ok) emailResults.push({ type, sent: false, error: result.error });
+      else if ('deferred' in result && result.deferred) emailResults.push({ type, sent: false, deferred: true });
+      else emailResults.push({ type, sent: true });
     };
 
     if (payload.enqueueCustomerVoucherEmail) await queueEmail('cliente_voucher_48hs');

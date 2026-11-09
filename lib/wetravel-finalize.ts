@@ -24,6 +24,7 @@ import { buildReservationPricingSnapshot } from '@/lib/sales/orchestrator';
 import { buildReferredByFromCode } from '@/lib/referrals';
 import { resolveDepartureConfig } from '@/lib/packages/resolve-departure';
 import type { WeTravelNormalizedEvent } from '@/lib/wetravel-events';
+import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 
 function formatAmount(amountTotal: number, currency: string) {
   const value = amountTotal / 100;
@@ -37,12 +38,6 @@ function formatDate(date: string) {
   return new Date(`${date}T12:00:00`).toLocaleDateString('es-AR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
-}
-
-function voucherAt(date: string, now: Timestamp) {
-  if (!date || date === 'sin-fecha') return now;
-  const due = new Date(`${date}T09:00:00-03:00`).getTime() - 48 * 60 * 60 * 1000;
-  return !Number.isFinite(due) || due <= now.toMillis() + 30_000 ? now : Timestamp.fromMillis(due);
 }
 
 function selectedExtrasSnapshot(raw: unknown) {
@@ -60,6 +55,8 @@ export async function finalizeWeTravelPaidCheckout(input: {
   const packageTitle = String(intentData.packageTitle || intentData.experienceTitle || '').trim();
   const people = Math.max(1, Number(intentData.people ?? 0) || 0);
   const date = String(intentData.date || 'sin-fecha');
+  const departureTime = String(intentData.operations?.pickupTime || intentData.departureTime || '').trim() || undefined;
+  const timeZone = String(intentData.timeZone || intentData.timezone || '').trim() || undefined;
   const currency = String(intentData.currency || 'ars').toLowerCase();
   const amountTotal = Math.max(0, Number(intentData.amountTotal ?? 0) || 0);
   if (!packageId || !people || !amountTotal) throw new Error('El intento WeeTravel no tiene datos válidos.');
@@ -80,8 +77,16 @@ export async function finalizeWeTravelPaidCheckout(input: {
   const voucherJobRef = doc(db, 'emailJobs', `wt_${intentId}_cliente_voucher`);
   const adminJobRef = doc(db, 'emailJobs', `wt_${intentId}_admin`);
   const now = Timestamp.now();
-  const nextVoucherAt = voucherAt(date, now);
-  const shouldQueueVoucher = date !== 'sin-fecha';
+  const voucherSchedule = calculateVoucherReminderSchedule({
+    date,
+    departureTime,
+    timeZone,
+    nowMs: now.toMillis(),
+  });
+  const shouldQueueVoucher = voucherSchedule.kind === 'scheduled';
+  const nextVoucherAt = shouldQueueVoucher && voucherSchedule.kind === 'scheduled'
+    ? Timestamp.fromMillis(voucherSchedule.nextAttemptAtMs)
+    : null;
   const selectedExtras = selectedExtrasSnapshot(intentData.selectedExtras);
   const from = getFromEmail(true);
   const referredBy = await buildReferredByFromCode({
@@ -141,6 +146,8 @@ export async function finalizeWeTravelPaidCheckout(input: {
       packageId, packageSlug, packageTitle: finalTitle,
       experienceId: packageId, experienceSlug: packageSlug, experienceTitle: finalTitle,
       date, people,
+      ...(departureTime ? { departureTime } : {}),
+      ...(timeZone ? { timeZone } : {}),
       peopleAdults: typeof intentData.peopleAdults === 'number' ? intentData.peopleAdults : null,
       peopleMinors: typeof intentData.peopleMinors === 'number' ? intentData.peopleMinors : null,
       selectedExtras,
@@ -185,7 +192,8 @@ export async function finalizeWeTravelPaidCheckout(input: {
       providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: now, createdAt: now, updatedAt: now });
     if (!voucherSnap.exists() && shouldQueueVoucher) tx.set(voucherJobRef, { type: 'cliente_voucher_48hs', status: 'pending', to: customerEmail, from, replyTo,
       subject: `Recordatorio de salida (48 hs): ${finalTitle}`, html: htmlVoucher, text: textVoucher, attempts: 0, lastError: null,
-      providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: nextVoucherAt, createdAt: now, updatedAt: now });
+      providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: nextVoucherAt!,
+      scheduledDepartureAtMs: voucherSchedule.kind === 'scheduled' ? voucherSchedule.departureAtMs : null, createdAt: now, updatedAt: now });
     if (!adminSnap.exists() && CONTACT_INFO.email) tx.set(adminJobRef, { type: 'admin_aviso', status: 'pending', to: CONTACT_INFO.email, from, replyTo,
       subject: `Nueva reserva: ${finalTitle} — ${customerName || customerEmail}`, html: htmlAdmin, text: textAdmin, attempts: 0, lastError: null,
       providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: now, createdAt: now, updatedAt: now });

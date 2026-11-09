@@ -8,6 +8,7 @@ import { renderVoucherPdf } from '../lib/vouchers/pdf.ts';
 import { buildReservationVoucher } from '../lib/vouchers/server.ts';
 import { buildVoucherReminder } from '../lib/vouchers/delivery.ts';
 import { reminderHtml, reminderText } from '../lib/emails/voucher-reminder.ts';
+import { calculateVoucherReminderSchedule, decideVoucherDelivery } from '../lib/vouchers/schedule.ts';
 
 const source = {
   reservationCode: 'BAFT-5806', customerName: 'Ana María Righetti', packageTitle: 'Discovery C/T',
@@ -89,11 +90,12 @@ test('minimal reminder escapes customer data and promises the attached voucher w
 });
 
 test('all reminder send paths forward generated attachments and ADMIN downloads the same server renderer', () => {
-  for (const file of ['lib/sales/send-email-job.ts', 'app/api/cron/email/route.ts', 'app/api/admin/emails/route.ts']) {
+  for (const file of ['lib/sales/send-email-job.ts', 'app/api/cron/email/route.ts']) {
     const code = readFileSync(file, 'utf8');
     assert.match(code, /currentReservationEmail\(/); assert.match(code, /attachments/);
     assert.match(code, /El recordatorio no tiene una reserva asociada/);
   }
+  assert.match(readFileSync('app/api/admin/emails/route.ts', 'utf8'), /sendEmailJobNow\(/);
   assert.match(readFileSync('lib/operations/email-content.ts', 'utf8'), /buildVoucherReminder\(r,/);
   assert.match(readFileSync('app/api/admin/reservas/[id]/voucher/route.ts', 'utf8'), /guardAdmin\(request\)/);
   assert.match(readFileSync('app/api/admin/reservas/[id]/voucher/route.ts', 'utf8'), /buildReservationVoucher\(snap.data\(\)!\)/);
@@ -110,4 +112,48 @@ test('reminder attachment and exported voucher contain the same PDF data, refres
   const updated = await buildVoucherReminder({ ...source, operations: { pickupHotelName: 'Otro hotel', pickupTime: '08:45' } }, brand);
   assert.match(updated.text, /Otro hotel/); assert.match(updated.text, /08:45/);
   assert.match(streams(updated.attachments[0].content), /Otro hotel/); assert.match(streams(updated.attachments[0].content), /08:45/);
+});
+
+test('voucher reminder is calculated 48 hours before the local departure time', () => {
+  const nowMs = Date.parse('2027-01-14T10:30:00.000Z');
+  const result = calculateVoucherReminderSchedule({ date: '2027-01-17', departureTime: '07:30', nowMs });
+  assert.equal(result.kind, 'scheduled');
+  if (result.kind !== 'scheduled') return;
+  assert.equal(result.departureAtMs, Date.parse('2027-01-17T10:30:00.000Z'));
+  assert.equal(result.reminderAtMs, Date.parse('2027-01-15T10:30:00.000Z'));
+  assert.equal(result.nextAttemptAtMs, result.reminderAtMs);
+  assert.equal(result.timeZone, 'America/Argentina/Buenos_Aires');
+
+  const defaultTime = calculateVoucherReminderSchedule({ date: '2027-01-17', nowMs });
+  assert.equal(defaultTime.kind, 'scheduled');
+  if (defaultTime.kind === 'scheduled') {
+    assert.equal(defaultTime.departureTime, '09:00');
+    assert.equal(defaultTime.departureAtMs, Date.parse('2027-01-17T12:00:00.000Z'));
+  }
+});
+
+test('last-minute departures send at once only while the excursion is still in the future', () => {
+  const nowMs = Date.parse('2027-01-17T08:00:00.000Z');
+  const result = calculateVoucherReminderSchedule({ date: '2027-01-17', departureTime: '07:30', nowMs });
+  assert.equal(result.kind, 'scheduled');
+  if (result.kind === 'scheduled') assert.equal(result.nextAttemptAtMs, nowMs);
+  assert.equal(calculateVoucherReminderSchedule({ date: '2027-01-17', departureTime: '07:30', nowMs: Date.parse('2027-01-17T10:30:00.000Z') }).kind, 'skipped');
+});
+
+test('invalid, missing and past departures are never scheduled', () => {
+  const nowMs = Date.parse('2027-01-14T10:30:00.000Z');
+  assert.deepEqual(calculateVoucherReminderSchedule({ date: 'sin-fecha', nowMs }), { kind: 'skipped', reason: 'missing_departure_date' });
+  assert.equal(calculateVoucherReminderSchedule({ date: '2027-02-30', nowMs }).kind, 'skipped');
+  assert.deepEqual(calculateVoucherReminderSchedule({ date: '2027-01-17', departureTime: '99:00', nowMs }), { kind: 'skipped', reason: 'invalid_departure_time' });
+  assert.deepEqual(calculateVoucherReminderSchedule({ date: '2027-01-17', timeZone: 'Mars/Olympus', nowMs }), { kind: 'skipped', reason: 'invalid_time_zone' });
+});
+
+test('delivery revalidates reservation status and defers early jobs to the recalculated due time', () => {
+  const nowMs = Date.parse('2027-01-14T10:30:00.000Z');
+  assert.equal(decideVoucherDelivery({ reservationStatus: 'completed', date: '2027-01-17', nowMs }).action, 'cancel');
+  assert.equal(decideVoucherDelivery({ reservationStatus: 'cancelled', date: '2027-01-17', nowMs }).action, 'cancel');
+  const deferred = decideVoucherDelivery({ reservationStatus: 'reserved', date: '2027-01-17', departureTime: '07:30', nowMs });
+  assert.equal(deferred.action, 'defer');
+  if (deferred.action === 'defer') assert.equal(deferred.schedule.nextAttemptAtMs, Date.parse('2027-01-15T10:30:00.000Z'));
+  assert.equal(decideVoucherDelivery({ reservationStatus: 'reserved', date: '2027-01-17', nowMs }).action, 'defer');
 });

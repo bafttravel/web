@@ -19,7 +19,7 @@ import { currentReservationEmail } from '@/lib/operations/email-content';
 
 export const runtime = 'nodejs';
 
-type EmailJobStatus = 'pending' | 'sending' | 'sent' | 'failed';
+type EmailJobStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
 type EmailJob = {
   type: VentaEmailJobType;
   status: EmailJobStatus;
@@ -119,11 +119,13 @@ async function processEmailQueue(request: Request) {
   const batchSize = 25;
   const jobs = await fetchPendingJobs(batchSize);
   if (jobs.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0 });
+    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0, deferred: 0, cancelled: 0 });
   }
 
   let sent = 0;
   let failed = 0;
+  let deferred = 0;
+  let cancelled = 0;
   const processedIds: string[] = [];
 
   for (const job of jobs) {
@@ -152,7 +154,54 @@ async function processEmailQueue(request: Request) {
       if (job.data.reservationId) {
         await prepareReservationOperations(job.data.reservationId).catch((error) => console.error('[emails] operaciones:', error));
         const content = await currentReservationEmail(job.data.reservationId, job.data.type);
-        if (content.suppressed) { await updateDoc(jobRef, { status: 'cancelled', updatedAt: Timestamp.now(), lastError: 'Envío automático desactivado o reserva cancelada' }); continue; }
+        if (content.suppressed) {
+          const now = Timestamp.now();
+          const reason = 'Envío automático desactivado o reserva cancelada';
+          await updateDoc(jobRef, { status: 'cancelled', updatedAt: now, lastError: reason });
+          if (job.data.type === 'cliente_voucher_48hs' || job.data.type === 'cliente_confirmacion') {
+            await updateDoc(doc(db, 'reservas', job.data.reservationId), {
+              'emailDelivery.customerVoucher.status': 'cancelled',
+              'emailDelivery.customerVoucher.error': reason,
+              voucherScheduledAt: null,
+              updatedAt: now,
+            }).catch(() => null);
+          }
+          cancelled += 1;
+          continue;
+        }
+        if (content.voucherDecision?.action === 'defer') {
+          const now = Timestamp.now();
+          const nextAttemptAt = Timestamp.fromMillis(content.voucherDecision.schedule.nextAttemptAtMs);
+          const reason = 'Reprogramado según la fecha y hora actuales de salida.';
+          await updateDoc(jobRef, {
+            status: 'pending',
+            nextAttemptAt,
+            scheduledDepartureAtMs: content.voucherDecision.schedule.departureAtMs,
+            lastError: reason,
+            updatedAt: now,
+          });
+          await updateDoc(doc(db, 'reservas', job.data.reservationId), {
+            'emailDelivery.customerVoucher.status': 'queued',
+            'emailDelivery.customerVoucher.error': null,
+            voucherScheduledAt: nextAttemptAt,
+            updatedAt: now,
+          }).catch(() => null);
+          deferred += 1;
+          continue;
+        }
+        if (content.voucherDecision?.action === 'cancel') {
+          const now = Timestamp.now();
+          const reason = content.voucherDecision.reason;
+          await updateDoc(jobRef, { status: 'cancelled', lastError: reason, updatedAt: now });
+          await updateDoc(doc(db, 'reservas', job.data.reservationId), {
+            'emailDelivery.customerVoucher.status': 'cancelled',
+            'emailDelivery.customerVoucher.error': reason,
+            voucherScheduledAt: null,
+            updatedAt: now,
+          }).catch(() => null);
+          cancelled += 1;
+          continue;
+        }
         if (content.html) job.data.html = content.html;
         if (content.text) job.data.text = content.text;
         attachments = content.attachments;
@@ -231,6 +280,8 @@ async function processEmailQueue(request: Request) {
     processed: processedIds.length,
     sent,
     failed,
+    deferred,
+    cancelled,
     ids: processedIds,
   });
 }

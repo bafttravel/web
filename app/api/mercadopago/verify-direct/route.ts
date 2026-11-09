@@ -24,6 +24,7 @@ import { getPayment, isPaymentApproved, mapPaymentStatusToReservationStatus, sea
 import { normalizeDigits, normalizeEmail, reserveNextReservationCode } from '@/lib/reservas/code';
 import { buildQueuedEmailDelivery } from '@/lib/sales/status';
 import { buildReservationPricingSnapshot } from '@/lib/sales/orchestrator';
+import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 import { buildReferredByFromCode } from '@/lib/referrals';
 import { resolveDepartureConfig } from '@/lib/packages/resolve-departure';
 
@@ -113,16 +114,6 @@ function buildPriceBreakdown(input: {
     selectedExtras: rawExtras.length > 0 ? rawExtras : null,
     ...(hasBreakdown ? { extrasTotalAmount: extrasCents } : {}),
   };
-}
-
-function computeVoucherNextAttemptAt(params: { date: string; now: Timestamp }): Timestamp {
-  const date = String(params.date ?? '').trim();
-  if (!date || date === 'sin-fecha') return params.now;
-  const ts = new Date(`${date}T09:00:00-03:00`).getTime();
-  if (!Number.isFinite(ts) || ts <= 0) return params.now;
-  const dueMs = ts - 48 * 60 * 60 * 1000;
-  if (dueMs <= params.now.toMillis() + 30 * 1000) return params.now;
-  return Timestamp.fromMillis(dueMs);
 }
 
 async function trySendEmailNow(input: {
@@ -341,6 +332,8 @@ export async function POST(request: Request) {
   const pkg = packageId ? await getPaqueteById(packageId).catch(() => null) : null;
   const finalPackageTitle = packageTitle ?? pkg?.titulo ?? '';
   const date = String(intentData.date ?? 'sin-fecha');
+  const departureTime = String(intentData.operations?.pickupTime || intentData.departureTime || '').trim() || undefined;
+  const timeZone = String(intentData.timeZone || intentData.timezone || '').trim() || undefined;
   const people = Number(intentData.people ?? 0) || 0;
   if (!packageId || !people || people < 1) {
     return NextResponse.json({ error: 'El intento no tiene datos válidos.' }, { status: 400 });
@@ -399,8 +392,16 @@ export async function POST(request: Request) {
   const textVoucher = buildClienteVoucher48hsText(directEmailData);
   const htmlAdmin = buildAdminNuevaReservaHtml(directEmailData);
   const textAdmin = buildAdminNuevaReservaText(directEmailData);
-  const nextAttemptAtVoucher = computeVoucherNextAttemptAt({ date, now });
-  const shouldQueueVoucher = Boolean(date && date !== 'sin-fecha');
+  const voucherSchedule = calculateVoucherReminderSchedule({
+    date,
+    departureTime,
+    timeZone,
+    nowMs: now.toMillis(),
+  });
+  const shouldQueueVoucher = reservationStatus === 'reserved' && voucherSchedule.kind === 'scheduled';
+  const nextAttemptAtVoucher = shouldQueueVoucher && voucherSchedule.kind === 'scheduled'
+    ? Timestamp.fromMillis(voucherSchedule.nextAttemptAtMs)
+    : null;
 
   // Los emails se envían desde /api/cron/email después de que la transacción
   // haya creado la reserva y los jobs. Enviar antes de la transacción provoca
@@ -440,6 +441,8 @@ export async function POST(request: Request) {
         experienceSlug: packageSlug,
         experienceTitle: finalPackageTitle,
         date,
+        ...(departureTime ? { departureTime } : {}),
+        ...(timeZone ? { timeZone } : {}),
         people,
         peopleAdults: typeof intentData.peopleAdults === 'number' ? intentData.peopleAdults : null,
         peopleMinors: typeof intentData.peopleMinors === 'number' ? intentData.peopleMinors : null,
@@ -553,7 +556,8 @@ export async function POST(request: Request) {
           sentAt: voucherSendId ? now : null,
           mercadoPagoPaymentId: String(directPaymentId),
           reservationId,
-          nextAttemptAt: nextAttemptAtVoucher,
+          nextAttemptAt: nextAttemptAtVoucher!,
+          scheduledDepartureAtMs: voucherSchedule.kind === 'scheduled' ? voucherSchedule.departureAtMs : null,
           createdAt: now,
           updatedAt: now,
         });

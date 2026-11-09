@@ -16,8 +16,7 @@ import {
 import { requireAdminToken } from '@/lib/adminAuth';
 import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
 import { getFromEmail, isResendConfigured } from '@/lib/resend';
-import { buildEmailDeliveryState, emailDeliveryPathForJobType } from '@/lib/sales/email-jobs';
-import { currentReservationEmail } from '@/lib/operations/email-content';
+import { sendEmailJobNow } from '@/lib/sales/send-email-job';
 
 export const runtime = 'nodejs';
 
@@ -157,7 +156,7 @@ export async function GET(request: Request) {
     const col = collection(db, 'emailJobs');
     let docs: Array<{ id: string; data: any }> = [];
     try {
-      if (status === 'failed' || status === 'pending' || status === 'sent' || status === 'sending') {
+      if (status === 'failed' || status === 'pending' || status === 'sent' || status === 'sending' || status === 'cancelled') {
         const q = query(
           col,
           where('status', '==', status),
@@ -230,6 +229,9 @@ export async function POST(request: Request) {
   const job = jobSnap.data() as any;
 
   if (action === 'retry') {
+    if (job.status === 'cancelled') {
+      return NextResponse.json({ error: 'El trabajo fue cancelado y ya no se puede reintentar.' }, { status: 409 });
+    }
     const now = Timestamp.now();
     await updateDoc(jobRef, {
       status: 'pending',
@@ -240,66 +242,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, jobId, queued: true });
   }
 
-  // sendNow: envío inmediato con Resend.
-  const { resend, isResendConfigured } = await import('@/lib/resend');
-  if (!isResendConfigured() || !resend) {
-    return NextResponse.json({ error: 'Resend no configurado (falta RESEND_API_KEY)' }, { status: 500 });
+  const result = await sendEmailJobNow(jobId);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error, sentBy: adminUser?.email ?? 'admin' }, { status: result.status });
   }
-  if (!job?.to || !job?.subject || !job?.html) {
-    return NextResponse.json({ error: 'Job incompleto (to/subject/html).' }, { status: 400 });
+  if ('deferred' in result && result.deferred) {
+    return NextResponse.json({ ok: true, jobId, queued: true, deferred: true, nextAttemptAt: result.nextAttemptAt });
   }
-  try {
-    const from = String(job?.from ?? getFromEmail());
-    if ((job.type === 'cliente_voucher_48hs' || job.type === 'cliente_confirmacion') && !job.reservationId) throw new Error('El recordatorio no tiene una reserva asociada');
-    const content = job.reservationId ? await currentReservationEmail(String(job.reservationId), String(job.type)) : undefined;
-    if (content?.suppressed) return NextResponse.json({ error: 'La reserva está cancelada o no existe' }, { status: 400 });
-    const { data, error } = await resend.emails.send({
-      from,
-      to: String(job.to),
-      subject: String(job.subject),
-      html: content?.html ?? String(job.html),
-      text: content?.text ?? (job?.text ? String(job.text) : undefined),
-      attachments: content?.attachments,
-      replyTo: job?.replyTo ? String(job.replyTo) : undefined,
-    });
-    if (error) throw new Error(typeof error === 'string' ? error : JSON.stringify(error));
-    const now = Timestamp.now();
-    await updateDoc(jobRef, {
-      status: 'sent',
-      attempts: Number(job?.attempts ?? 0) + 1,
-      lastError: null,
-      sentAt: now,
-      updatedAt: now,
-    }).catch(() => null);
-    if (job?.reservationId && job?.type) {
-      try {
-        await updateDoc(doc(db, 'reservas', String(job.reservationId)), {
-          [emailDeliveryPathForJobType(job.type)]: buildEmailDeliveryState({
-            status: 'sent',
-            now,
-            jobId,
-            provider: 'resend',
-            providerMessageId: (data as any)?.id ?? null,
-          }),
-          ...(String(job.type) === 'cliente_voucher_48hs' || String(job.type) === 'cliente_confirmacion'
-            ? { voucherSent: true, voucherSentAt: now }
-            : {}),
-          updatedAt: now,
-        });
-      } catch { /* noop */ }
-    }
-    return NextResponse.json({ ok: true, jobId, sent: true, providerMessageId: (data as any)?.id ?? null });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    await updateDoc(jobRef, {
-      status: 'failed',
-      attempts: Number(job?.attempts ?? 0) + 1,
-      lastError: detail,
-      updatedAt: Timestamp.now(),
-    }).catch(() => null);
-    return NextResponse.json(
-      { error: 'No se pudo enviar el email', detail, sentBy: adminUser?.email ?? 'admin' },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({ ok: true, jobId, sent: true, providerMessageId: 'providerMessageId' in result ? result.providerMessageId : null });
 }

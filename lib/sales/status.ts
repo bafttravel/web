@@ -1,8 +1,8 @@
 import type { Reservation, ReservationPaymentMethod } from '@/components/landing-reserva/types';
 import { deriveReservationPaymentStatus, normalizeReservationPaymentMethod } from '@/lib/sales/orchestrator';
 
-export type VentaEmailStatus = 'not_sent' | 'queued' | 'sending' | 'sent' | 'failed';
-export type VentaVoucherStatus = 'not_generated' | 'generated' | 'queued' | 'sent' | 'failed';
+export type VentaEmailStatus = 'not_sent' | 'queued' | 'sending' | 'sent' | 'failed' | 'cancelled';
+export type VentaVoucherStatus = 'not_generated' | 'generated' | 'queued' | 'sent' | 'failed' | 'cancelled';
 export type VentaCommercialStatus = 'pending_payment' | 'confirmed' | 'manual_review' | 'cancelled';
 export type VentaOperationalStatus = 'awaiting_confirmation' | 'confirmed' | 'cancelled';
 export type VentaPublicTone = 'success' | 'pending' | 'warning' | 'error';
@@ -98,6 +98,7 @@ export function buildQueuedEmailDelivery(input?: ReservationEmailDeliveryOverrid
 
 export function deriveVoucherStatus(reservation: Reservation): VentaVoucherStatus {
   const customerEmailStatus = reservation.emailDelivery?.customerVoucher?.status;
+  if (customerEmailStatus === 'cancelled') return 'cancelled';
   if (customerEmailStatus === 'failed') return 'failed';
   if (reservation.voucherSent) return 'sent';
   if (customerEmailStatus === 'queued' || customerEmailStatus === 'sending') return 'queued';

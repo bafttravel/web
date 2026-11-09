@@ -73,6 +73,7 @@ const statusBadge = (s?: string) => {
   const v = String(s ?? '').toLowerCase();
   if (v === 'sent') return <Badge variant="default">Enviado</Badge>;
   if (v === 'failed') return <Badge variant="destructive">Fallido</Badge>;
+  if (v === 'cancelled') return <Badge variant="outline">Cancelado</Badge>;
   if (v === 'sending') return <Badge variant="secondary">Enviando</Badge>;
   return <Badge variant="outline">Pendiente</Badge>;
 };
@@ -149,7 +150,7 @@ export default function AdminEmailsPage() {
       });
       const payload = await res.json().catch(() => null);
       if (!res.ok) throw new Error(payload?.detail ?? payload?.error ?? 'Falló la acción');
-      toast.success(action === 'sendNow' ? 'Email enviado' : 'Job reencolado para el cron');
+      toast.success(payload?.deferred ? 'Voucher reprogramado según la salida actual' : action === 'sendNow' ? 'Email enviado' : 'Job reencolado para el cron');
       await fetchJobs();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo completar la acción');
@@ -159,12 +160,13 @@ export default function AdminEmailsPage() {
   };
 
   const counts = useMemo(() => {
-    const out = { sent: 0, pending: 0, failed: 0, sending: 0 };
+    const out = { sent: 0, pending: 0, failed: 0, sending: 0, cancelled: 0 };
     for (const j of jobs) {
       const s = String(j.status ?? '').toLowerCase();
       if (s === 'sent') out.sent += 1;
       else if (s === 'failed') out.failed += 1;
       else if (s === 'sending') out.sending += 1;
+      else if (s === 'cancelled') out.cancelled += 1;
       else out.pending += 1;
     }
     return out;
@@ -216,7 +218,7 @@ export default function AdminEmailsPage() {
               <div>
                 <p className="font-semibold uppercase tracking-wider text-slate-400">Resumen</p>
                 <p className="mt-1 text-slate-700">
-                  {counts.sent} enviados · {counts.pending} pendientes · {counts.failed} fallidos
+                  {counts.sent} enviados · {counts.pending} pendientes · {counts.failed} fallidos · {counts.cancelled} cancelados
                 </p>
               </div>
             </section>
@@ -252,6 +254,7 @@ export default function AdminEmailsPage() {
                     <SelectItem value="failed">Fallidos</SelectItem>
                     <SelectItem value="sent">Enviados</SelectItem>
                     <SelectItem value="sending">Enviando</SelectItem>
+                    <SelectItem value="cancelled">Cancelados</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -341,14 +344,14 @@ export default function AdminEmailsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy}
+                          disabled={busy || String(job.status).toLowerCase() === 'cancelled'}
                           onClick={() => act(job.id, 'retry')}
                           title="Volver a pendiente para que lo envíe el cron"
                         >
                           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
                           Reintentar
                         </Button>
-                        <Button size="sm" disabled={busy} onClick={() => act(job.id, 'sendNow')} title="Enviar ahora con Resend">
+                        <Button size="sm" disabled={busy || String(job.status).toLowerCase() === 'cancelled'} onClick={() => act(job.id, 'sendNow')} title="Enviar ahora con Resend">
                           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                           Enviar ahora
                         </Button>

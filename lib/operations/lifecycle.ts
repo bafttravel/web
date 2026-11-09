@@ -5,6 +5,7 @@ import { EMPTY_RESERVATION_OPERATIONS, type PackageOperations } from './types';
 import { buildAdminNuevaReservaHtml, buildAdminNuevaReservaText, buildClienteCompraConfirmadaHtml, buildClienteCompraConfirmadaText, buildClienteVoucher48hsHtml, buildClienteVoucher48hsText } from '@/lib/emails/reserva-confirmada';
 import { getFromEmail } from '@/lib/resend';
 import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 
 const escape = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Stable job IDs + transaction: retries never enqueue another sale notification. */
@@ -33,10 +34,16 @@ export async function prepareReservationOperations(reservationId: string, queueC
   if (confirmed && queueCustomer && CONTACT_INFO.email && !data.emailDelivery?.adminNotification?.jobId) jobs.push({ id: `${reservationId}_admin_aviso`, type: 'admin_aviso', to: CONTACT_INFO.email, subject: `Nueva reserva: ${title}`, html: buildAdminNuevaReservaHtml(emailData), text: buildAdminNuevaReservaText(emailData), nextAttemptAt: now, path: 'adminNotification' });
   if (confirmed && queueCustomer && data.customerEmail) {
     if (!data.emailDelivery?.customerConfirmation?.jobId) jobs.push({ id: `${reservationId}_cliente_confirmacion_compra`, type: 'cliente_confirmacion_compra', to: data.customerEmail, subject: `Compra confirmada: ${title}`, html: buildClienteCompraConfirmadaHtml(emailData), text: buildClienteCompraConfirmadaText(emailData), nextAttemptAt: now, path: 'customerConfirmation' });
-    if (data.date !== 'sin-fecha' && !data.emailDelivery?.customerVoucher?.jobId) {
-      const departureMs = Date.parse(`${data.date}T${operations.pickupTime || '09:00'}:00-03:00`);
-      const due = Timestamp.fromMillis(Math.max(now.toMillis(), departureMs - 48 * 3600000));
-      jobs.push({ id: `${reservationId}_cliente_voucher_48hs`, type: 'cliente_voucher_48hs', to: data.customerEmail, subject: `Voucher de salida: ${title}`, html: buildClienteVoucher48hsHtml(emailData), text: buildClienteVoucher48hsText(emailData), nextAttemptAt: due, path: 'customerVoucher' });
+    if (data.status === 'reserved' && !data.emailDelivery?.customerVoucher?.jobId) {
+      const schedule = calculateVoucherReminderSchedule({
+        date: data.date,
+        departureTime: operations.pickupTime || data.departureTime,
+        timeZone: data.timeZone ?? data.timezone,
+        nowMs: now.toMillis(),
+      });
+      if (schedule.kind === 'scheduled') {
+        jobs.push({ id: `${reservationId}_cliente_voucher_48hs`, type: 'cliente_voucher_48hs', to: data.customerEmail, subject: `Voucher de salida: ${title}`, html: buildClienteVoucher48hsHtml(emailData), text: buildClienteVoucher48hsText(emailData), nextAttemptAt: Timestamp.fromMillis(schedule.nextAttemptAtMs), path: 'customerVoucher' });
+      }
     }
   }
   await db.runTransaction(async (tx) => {
@@ -47,8 +54,40 @@ export async function prepareReservationOperations(reservationId: string, queueC
     if (!['reserved', 'completed'].includes(current.data()?.status)) return;
     jobs.forEach((j, i) => {
       if (existing[i].exists) return;
-      tx.create(db.collection('emailJobs').doc(j.id), { type: j.type, status: 'pending', to: j.to, from: getFromEmail(), subject: j.subject, html: j.html, text: j.text, reservationId, attempts: 0, lastError: null, nextAttemptAt: j.nextAttemptAt, createdAt: now, updatedAt: now });
-      tx.update(ref, { [`emailDelivery.${j.path}`]: { status: 'queued', jobId: j.id, provider: 'resend', sentAt: null }, ...(j.path === 'customerVoucher' ? { voucherScheduledAt: j.nextAttemptAt } : {}) });
+      const currentData = current.data()!;
+      if (j.type === 'cliente_voucher_48hs' && currentData.status !== 'reserved') return;
+      const voucherSchedule = j.type === 'cliente_voucher_48hs'
+        ? calculateVoucherReminderSchedule({
+            date: currentData.date,
+            departureTime: currentData.operations?.pickupTime || currentData.departureTime,
+            timeZone: currentData.timeZone ?? currentData.timezone,
+            nowMs: now.toMillis(),
+          })
+        : null;
+      if (voucherSchedule && voucherSchedule.kind !== 'scheduled') return;
+      const nextAttemptAt = voucherSchedule?.kind === 'scheduled'
+        ? Timestamp.fromMillis(voucherSchedule.nextAttemptAtMs)
+        : j.nextAttemptAt;
+      tx.create(db.collection('emailJobs').doc(j.id), {
+        type: j.type,
+        status: 'pending',
+        to: j.to,
+        from: getFromEmail(),
+        subject: j.subject,
+        html: j.html,
+        text: j.text,
+        reservationId,
+        attempts: 0,
+        lastError: null,
+        nextAttemptAt,
+        ...(voucherSchedule?.kind === 'scheduled' ? { scheduledDepartureAtMs: voucherSchedule.departureAtMs } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+      tx.update(ref, {
+        [`emailDelivery.${j.path}`]: { status: 'queued', jobId: j.id, provider: 'resend', sentAt: null },
+        ...(j.path === 'customerVoucher' ? { voucherScheduledAt: nextAttemptAt } : {}),
+      });
     });
   });
 }

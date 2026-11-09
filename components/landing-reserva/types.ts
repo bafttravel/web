@@ -112,7 +112,7 @@ export type ReservationReferralInfo = {
   payoutAt?: object;
 };
 
-export type ReservationEmailJobStatus = 'not_sent' | 'queued' | 'sending' | 'sent' | 'failed';
+export type ReservationEmailJobStatus = 'not_sent' | 'queued' | 'sending' | 'sent' | 'failed' | 'cancelled';
 
 export type ReservationEmailDeliveryItem = {
   status: ReservationEmailJobStatus;

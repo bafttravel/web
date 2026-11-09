@@ -22,6 +22,7 @@ import {
 } from '@/lib/reservas/code';
 import { buildDefaultEmailDelivery, buildQueuedEmailDelivery } from '@/lib/sales/status';
 import { buildReservationPricingSnapshot } from '@/lib/sales/orchestrator';
+import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 import { resolveDepartureConfig } from '@/lib/packages/resolve-departure';
 import {
   Timestamp,
@@ -172,21 +173,6 @@ function formatDate(date: string): string {
   } catch {
     return date;
   }
-}
-
-function computeVoucherNextAttemptAt(params: {
-  date: string;
-  now: Timestamp;
-}): Timestamp {
-  const date = String(params.date ?? '').trim();
-  if (!date || date === 'sin-fecha') return params.now;
-  const hhmm = '09:00';
-  const ts = new Date(`${date}T${hhmm}:00-03:00`).getTime();
-  if (!Number.isFinite(ts) || ts <= 0) return params.now;
-  const dueMs = ts - 48 * 60 * 60 * 1000;
-  const nowMs = params.now.toMillis();
-  if (dueMs <= nowMs + 30 * 1000) return params.now;
-  return Timestamp.fromMillis(dueMs);
 }
 
 /**
@@ -719,6 +705,10 @@ export async function POST(request: Request) {
             const packageSlug = String(it.packageSlug || it.experienceSlug || '');
             const packageTitle = String(it.packageTitle || it.experienceTitle || '');
             const date = String(it.date || 'sin-fecha');
+            const departureTime = [it.operations?.pickupTime, it.departureTime, intentData.operations?.pickupTime, intentData.departureTime]
+              .find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+            const timeZone = [it.timeZone, it.timezone, intentData.timeZone, intentData.timezone]
+              .find((value) => typeof value === 'string' && value.trim()) as string | undefined;
             const people = Number(it.people ?? 0);
             const currency = String(it.currency || intentData.currency || 'ars');
             const amountTotalItem = Number(it.subtotalAmount ?? it.amountTotal ?? 0);
@@ -837,8 +827,16 @@ export async function POST(request: Request) {
               const textVoucher = buildClienteVoucher48hsText(emailData);
               const htmlAdmin = buildAdminNuevaReservaHtml(emailData);
               const textAdmin = buildAdminNuevaReservaText(emailData);
-              const nextAttemptAtVoucher = computeVoucherNextAttemptAt({ date, now });
-              const shouldQueueVoucher = Boolean(date && date !== 'sin-fecha');
+              const voucherSchedule = calculateVoucherReminderSchedule({
+                date,
+                departureTime,
+                timeZone,
+                nowMs: now.toMillis(),
+              });
+              const shouldQueueVoucher = reservationStatus === 'reserved' && voucherSchedule.kind === 'scheduled';
+              const nextAttemptAtVoucher = shouldQueueVoucher && voucherSchedule.kind === 'scheduled'
+                ? Timestamp.fromMillis(voucherSchedule.nextAttemptAtMs)
+                : null;
 
               queueSet(reservaRef, {
                 ...(orderId ? { orderId } : {}),
@@ -851,6 +849,8 @@ export async function POST(request: Request) {
                 experienceSlug: packageSlug,
                 experienceTitle: finalPackageTitle,
                 date,
+                ...(departureTime ? { departureTime } : {}),
+                ...(timeZone ? { timeZone } : {}),
                 people,
                 peopleAdults: typeof (it as any).peopleAdults === 'number' ? Number((it as any).peopleAdults) : null,
                 peopleMinors: typeof (it as any).peopleMinors === 'number' ? Number((it as any).peopleMinors) : null,
@@ -1000,7 +1000,8 @@ export async function POST(request: Request) {
                   sentAt: voucherSendId ? now : null,
                   mercadoPagoPaymentId: String(paymentId),
                   reservationId,
-                  nextAttemptAt: nextAttemptAtVoucher,
+                  nextAttemptAt: nextAttemptAtVoucher!,
+                  scheduledDepartureAtMs: voucherSchedule.kind === 'scheduled' ? voucherSchedule.departureAtMs : null,
                   createdAt: now,
                   updatedAt: now,
                 });
@@ -1313,6 +1314,8 @@ export async function POST(request: Request) {
       passengerDetails: intentPassengerDetails,
       referral,
     } = intentData;
+    const departureTime = String(intentData.operations?.pickupTime || intentData.departureTime || '').trim() || undefined;
+    const timeZone = String(intentData.timeZone || intentData.timezone || '').trim() || undefined;
 
     // Obtener datos actualizados del paquete
     const pkg = packageId ? await getPaqueteById(packageId) : null;
@@ -1387,8 +1390,6 @@ export async function POST(request: Request) {
     const textAdmin = buildAdminNuevaReservaText(emailData);
     const from = getFromEmail(true);
     const replyTo = process.env.SUPPORT_EMAIL || getFromEmail(false);
-    const nextAttemptAtVoucherDirect = computeVoucherNextAttemptAt({ date, now: Timestamp.now() });
-    const shouldQueueVoucherDirect = Boolean(date && date !== 'sin-fecha');
     const directSend: { confirm?: string; voucher?: string; admin?: string } = {};
 
     // Crear o actualizar reserva en Firestore
@@ -1408,8 +1409,16 @@ export async function POST(request: Request) {
         const emailClienteVoucherSnap = await tx.get(emailClienteVoucherRef);
         const emailAdminSnap = await tx.get(emailAdminRef);
 
-        const nextAttemptAtVoucher = computeVoucherNextAttemptAt({ date, now });
-        const shouldQueueVoucher = Boolean(date && date !== 'sin-fecha');
+        const voucherSchedule = calculateVoucherReminderSchedule({
+          date,
+          departureTime,
+          timeZone,
+          nowMs: now.toMillis(),
+        });
+        const shouldQueueVoucher = reservationStatus === 'reserved' && voucherSchedule.kind === 'scheduled';
+        const nextAttemptAtVoucher = shouldQueueVoucher && voucherSchedule.kind === 'scheduled'
+          ? Timestamp.fromMillis(voucherSchedule.nextAttemptAtMs)
+          : null;
 
         // El código ya fue reservado antes de la tx (variable externa
         // `reservationCode`). No se toca el contador acá.
@@ -1464,6 +1473,8 @@ export async function POST(request: Request) {
             experienceSlug: packageSlug,
             experienceTitle: finalPackageTitle,
             date,
+            ...(departureTime ? { departureTime } : {}),
+            ...(timeZone ? { timeZone } : {}),
             people,
             selectedExtras: Array.isArray((intentData as any).selectedExtras) ? (intentData as any).selectedExtras : null,
             baseSubtotalAmount:
@@ -1644,7 +1655,8 @@ export async function POST(request: Request) {
             sentAt: directSend.voucher ? now : null,
             mercadoPagoPaymentId: String(paymentId),
             reservationId,
-            nextAttemptAt: nextAttemptAtVoucher,
+            nextAttemptAt: nextAttemptAtVoucher!,
+            scheduledDepartureAtMs: voucherSchedule.kind === 'scheduled' ? voucherSchedule.departureAtMs : null,
             createdAt: now,
             updatedAt: now,
           });

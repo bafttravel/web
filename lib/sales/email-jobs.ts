@@ -6,7 +6,7 @@ export type VentaEmailJobType =
   | 'cliente_voucher_48hs'
   | 'cliente_confirmacion'
   | 'admin_aviso';
-export type VentaEmailJobStatus = 'pending' | 'sending' | 'sent' | 'failed';
+export type VentaEmailJobStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
 
 export function emailDeliveryPathForJobType(type: VentaEmailJobType): string {
   if (type === 'vendedor_aviso') return 'emailDelivery.vendorNotification';
@@ -49,7 +49,7 @@ export function buildEmailJobDocument(input: {
 }
 
 export function buildEmailDeliveryState(input: {
-  status: 'queued' | 'sent' | 'failed';
+  status: 'queued' | 'sent' | 'failed' | 'cancelled';
   now: Timestamp;
   jobId: string;
   provider?: string | null;
