@@ -130,8 +130,6 @@ const paymentOptions = [
 type DialogState =
   | { type: 'none' }
   | { type: 'cancel'; reserva: Reservation }
-  | { type: 'delete'; reserva: Reservation }
-  | { type: 'bulk-delete' }
   | { type: 'reprogram'; reserva: Reservation }
   | { type: 'upload'; reserva: Reservation };
 
@@ -219,11 +217,8 @@ export default function ReservasPage() {
   const [dialog, setDialog] = useState<DialogState>({ type: 'none' });
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionLoadingType, setActionLoadingType] = useState<'cancel' | 'pdf' | 'delete' | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(() => new Set());
-  const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState('');
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
-  const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ completed: number; total: number } | null>(null);
 
   const fetchData = async (opts?: { keepLoading?: boolean }) => {
     if (!user) return;
@@ -352,10 +347,6 @@ export default function ReservasPage() {
     return ventasFiltradas.slice(start, start + itemsPerPage);
   }, [ventasFiltradas, currentPage, itemsPerPage]);
 
-  const selectedReservations = useMemo(
-    () => reservas.filter((reservation) => selectedReservationIds.has(reservation.id)),
-    [reservas, selectedReservationIds],
-  );
   const selectablePageIds = ventasPaginadas
     .filter((sale): sale is Extract<SaleRow, { kind: 'reservation' }> => sale.kind === 'reservation')
     .map((sale) => sale.id);
@@ -418,8 +409,13 @@ export default function ReservasPage() {
   };
 
   const openBulkDelete = () => {
-    setBulkDeleteConfirmation('');
-    setDialog({ type: 'bulk-delete' });
+    const count = selectedReservationIds.size;
+    if (count === 0 || bulkDeleteLoading) return;
+    const confirmationMessage = count === 1
+      ? '¿Eliminar definitivamente la reserva seleccionada?'
+      : `¿Eliminar definitivamente las ${count} reservas seleccionadas?`;
+    if (!window.confirm(confirmationMessage)) return;
+    void runBulkDelete();
   };
 
   const updateReservation = async (payload: {
@@ -473,8 +469,9 @@ export default function ReservasPage() {
 
   const openCancel = (reserva: Reservation) => setDialog({ type: 'cancel', reserva });
   const openDelete = (reserva: Reservation) => {
-    setDeleteConfirmation('');
-    setDialog({ type: 'delete', reserva });
+    const reservationCode = String((reserva as any).reservationCode || reserva.id);
+    if (!window.confirm(`¿Eliminar definitivamente la reserva ${reservationCode}?`)) return;
+    void runDelete(reserva);
   };
 
   const downloadVoucher = async (reserva: Reservation) => {
@@ -513,23 +510,24 @@ export default function ReservasPage() {
     }
   };
 
-  const runDelete = async () => {
-    if (dialog.type !== 'delete' || !user) return;
-    const reserva = dialog.reserva;
+  const runDelete = async (reserva: Reservation) => {
+    if (!user) {
+      toast.error('Debés iniciar sesión para ejecutar esta acción');
+      return;
+    }
     setActionLoadingId(reserva.id);
     setActionLoadingType('delete');
     try {
       const token = await user.getIdToken();
+      const confirmationCode = String((reserva as any).reservationCode || reserva.id);
       const response = await fetch(`/api/admin/reservas/${encodeURIComponent(reserva.id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmationCode: deleteConfirmation.trim() }),
+        body: JSON.stringify({ confirmationCode }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? 'No se pudo borrar la reserva');
 
-      setDialog({ type: 'none' });
-      setDeleteConfirmation('');
       setSelectedReservationIds((previous) => {
         if (!previous.has(reserva.id)) return previous;
         const next = new Set(previous);
@@ -554,24 +552,21 @@ export default function ReservasPage() {
   };
 
   const runBulkDelete = async () => {
-    if (dialog.type !== 'bulk-delete' || !user || selectedReservationIds.size === 0) return;
+    if (!user || selectedReservationIds.size === 0 || bulkDeleteLoading) return;
     const ids = Array.from(selectedReservationIds);
     const expectedConfirmation = `ELIMINAR ${ids.length}`;
-    if (bulkDeleteConfirmation.trim() !== expectedConfirmation) return;
 
     const completedIds = new Set<string>();
     const failures: string[] = [];
     let fileDeletionWarnings = 0;
     let requestError = '';
     setBulkDeleteLoading(true);
-    setBulkDeleteProgress({ completed: 0, total: ids.length });
 
     try {
       const token = await user.getIdToken();
       const chunkSize = 25;
       for (let offset = 0; offset < ids.length; offset += chunkSize) {
         const chunk = ids.slice(offset, offset + chunkSize);
-        setBulkDeleteProgress({ completed: offset, total: ids.length });
         const response = await fetch('/api/admin/reservas/bulk-delete', {
           method: 'POST',
           headers: {
@@ -599,7 +594,6 @@ export default function ReservasPage() {
           completedIds.add(id);
           fileDeletionWarnings += Number(result.fileDeletionWarnings ?? 0);
         }
-        setBulkDeleteProgress({ completed: offset + chunk.length, total: ids.length });
       }
     } catch (error) {
       requestError = error instanceof Error ? error.message : 'No se pudo completar el borrado masivo';
@@ -612,10 +606,7 @@ export default function ReservasPage() {
         });
         await fetchData({ keepLoading: true });
       }
-      setDialog({ type: 'none' });
-      setBulkDeleteConfirmation('');
       setBulkDeleteLoading(false);
-      setBulkDeleteProgress(null);
     }
 
     if (completedIds.size > 0) {
@@ -923,8 +914,8 @@ export default function ReservasPage() {
                     disabled={bulkDeleteLoading}
                     onClick={openBulkDelete}
                   >
-                    <Trash2 className="h-4 w-4" />
-                    Eliminar seleccionadas
+                    {bulkDeleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {bulkDeleteLoading ? 'Eliminando…' : 'Eliminar seleccionadas'}
                   </Button>
                 </div>
               )}
@@ -1145,7 +1136,7 @@ export default function ReservasPage() {
                               </Button>
                             )}
                             <Button variant="outline" size="icon-sm" className="rounded-lg border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800" title="Borrar reserva" aria-label="Borrar reserva" disabled={isBusy} onClick={() => openDelete(r)}>
-                              <Trash2 className="h-3.5 w-3.5" />
+                              {isBusy && actionLoadingType === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                             </Button>
                           </div>
                         </TableCell>
@@ -1197,135 +1188,6 @@ export default function ReservasPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={dialog.type === 'delete'}
-        onOpenChange={(open) => {
-          if (!open && !(dialog.type === 'delete' && actionLoadingId === dialog.reserva.id)) {
-            setDialog({ type: 'none' });
-            setDeleteConfirmation('');
-          }
-        }}
-      >
-        <AlertDialogContent className="rounded-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Borrar esta reserva definitivamente?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  Se quitará de ventas y se liberarán las butacas que todavía estén asignadas a esta reserva. También se cancelarán avisos pendientes y se limpiarán sus vínculos operativos.
-                </p>
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                  Es irreversible. La evidencia financiera y contable se conservará en el archivo de auditoría; los comprobantes protegidos y las transacciones externas no se borran.
-                </p>
-                {dialog.type === 'delete' && (
-                  <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-                    <p className="font-medium text-slate-900">{dialog.reserva.customerName || 'Cliente sin nombre'}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {dialog.reserva.experienceTitle || dialog.reserva.packageTitle || 'Reserva'} · código{' '}
-                      <span className="font-mono font-semibold text-slate-700">{String((dialog.reserva as any).reservationCode || dialog.reserva.id)}</span>
-                    </p>
-                  </div>
-                )}
-                <label className="block space-y-1.5 text-xs font-medium text-slate-700">
-                  Escribí el código de reserva para confirmar
-                  <Input
-                    autoComplete="off"
-                    value={deleteConfirmation}
-                    onChange={(event) => setDeleteConfirmation(event.target.value)}
-                    placeholder={dialog.type === 'delete' ? String((dialog.reserva as any).reservationCode || dialog.reserva.id) : ''}
-                    disabled={dialog.type === 'delete' && actionLoadingId === dialog.reserva.id}
-                  />
-                </label>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={dialog.type === 'delete' && actionLoadingId === dialog.reserva.id}>Volver</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-600"
-              disabled={dialog.type !== 'delete' || deleteConfirmation.trim() !== String((dialog.reserva as any).reservationCode || dialog.reserva.id) || actionLoadingId === dialog.reserva.id}
-              onClick={(event) => {
-                event.preventDefault();
-                void runDelete();
-              }}
-            >
-              {dialog.type === 'delete' && actionLoadingId === dialog.reserva.id && actionLoadingType === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Borrar definitivamente
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={dialog.type === 'bulk-delete'}
-        onOpenChange={(open) => {
-          if (!open && !bulkDeleteLoading) {
-            setDialog({ type: 'none' });
-            setBulkDeleteConfirmation('');
-          }
-        }}
-      >
-        <AlertDialogContent className="rounded-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              ¿Borrar definitivamente {selectedReservationIds.size} reserva{selectedReservationIds.size === 1 ? '' : 's'}?
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>
-                  Se liberarán las butacas asignadas y se limpiarán los vínculos operativos. La evidencia financiera y contable quedará archivada.
-                </p>
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                  Es irreversible. Las órdenes externas y los comprobantes protegidos no se borran.
-                </p>
-                <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-                  <p className="font-medium text-slate-900">Reservas seleccionadas</p>
-                  <ul className="mt-1 space-y-1 text-xs text-slate-600">
-                    {selectedReservations.slice(0, 5).map((reservation) => (
-                      <li key={reservation.id}>
-                        {reservation.customerName || 'Cliente sin nombre'} · {String((reservation as any).reservationCode || reservation.id)}
-                      </li>
-                    ))}
-                    {selectedReservationIds.size > 5 && (
-                      <li>y {selectedReservationIds.size - 5} reserva{selectedReservationIds.size - 5 === 1 ? '' : 's'} más</li>
-                    )}
-                  </ul>
-                </div>
-                <label className="block space-y-1.5 text-xs font-medium text-slate-700">
-                  Escribí <span className="font-mono">ELIMINAR {selectedReservationIds.size}</span> para confirmar
-                  <Input
-                    autoComplete="off"
-                    value={bulkDeleteConfirmation}
-                    onChange={(event) => setBulkDeleteConfirmation(event.target.value)}
-                    placeholder={`ELIMINAR ${selectedReservationIds.size}`}
-                    disabled={bulkDeleteLoading}
-                  />
-                </label>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={bulkDeleteLoading}>Volver</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-600"
-              disabled={
-                selectedReservationIds.size === 0
-                || bulkDeleteConfirmation.trim() !== `ELIMINAR ${selectedReservationIds.size}`
-                || bulkDeleteLoading
-              }
-              onClick={(event) => {
-                event.preventDefault();
-                void runBulkDelete();
-              }}
-            >
-              {bulkDeleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              {bulkDeleteLoading && bulkDeleteProgress
-                ? `Eliminando ${bulkDeleteProgress.completed}/${bulkDeleteProgress.total}`
-                : 'Borrar definitivamente'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </ProtectedRoute>
   );
 }

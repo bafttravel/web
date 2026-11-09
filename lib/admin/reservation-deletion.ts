@@ -1,6 +1,5 @@
 import { FieldValue, type Firestore, type WriteBatch } from 'firebase-admin/firestore';
 import { deleteBlobAsset } from '@/lib/blob';
-import { getSeatDepartureId, seatIdsFromLabels } from '@/lib/seats/server';
 
 function financialSnapshot(reservation: Record<string, any>) {
   const operations = reservation.operations ?? {};
@@ -80,64 +79,6 @@ async function writeInChunks(
   }
 }
 
-async function releaseReservationSeats(
-  db: Firestore,
-  reservationId: string,
-  reservation: Record<string, any>,
-) {
-  const labels = Array.isArray(reservation.selectedSeats)
-    ? reservation.selectedSeats.map((seat: unknown) => String(seat)).filter(Boolean)
-    : [];
-  const packageId = String(reservation.packageId ?? reservation.experienceId ?? '');
-  const date = String(reservation.date ?? '');
-  const layoutId = String(reservation.seatLayoutId ?? '');
-  if (!labels.length || !packageId || !date || date === 'sin-fecha' || !layoutId) return;
-
-  const layoutRef = db.collection('seatLayouts').doc(layoutId);
-  const departureRef = db.collection('seatReservations').doc(getSeatDepartureId(packageId, date));
-  await db.runTransaction(async (transaction) => {
-    const [reservationSnapshot, layoutSnapshot, departureSnapshot] = await Promise.all([
-      transaction.get(db.collection('reservas').doc(reservationId)),
-      transaction.get(layoutRef),
-      transaction.get(departureRef),
-    ]);
-    if (!reservationSnapshot.exists || !layoutSnapshot.exists || !departureSnapshot.exists) return;
-
-    const template = { id: layoutSnapshot.id, ...layoutSnapshot.data() } as any;
-    const seatIds = seatIdsFromLabels(template, labels);
-    if (!seatIds.length) return;
-
-    const departure = departureSnapshot.data() ?? {};
-    const seats = { ...(departure.seats ?? {}) } as Record<string, Record<string, unknown>>;
-    const templateSeats = new Map<string, Record<string, unknown>>(
-      (Array.isArray(template.seats) ? template.seats : []).map((seat: Record<string, unknown>) => [String(seat.seatId), seat]),
-    );
-    let changed = false;
-
-    for (const seatId of seatIds) {
-      const current = seats[seatId];
-      if (!current || String(current.reservationId ?? '') !== reservationId) continue;
-      const base = templateSeats.get(seatId);
-      const disabled = Boolean(base?.disabled);
-      const defaultBlocked = Boolean(base?.defaultBlocked);
-      seats[seatId] = {
-        status: disabled ? 'disabled' : defaultBlocked ? 'blocked' : 'available',
-        holdId: null,
-        cartId: null,
-        cartItemId: null,
-        orderId: null,
-        reservationId: null,
-        expiresAt: null,
-        blockedBy: defaultBlocked ? 'default' : null,
-        updatedAt: new Date(),
-      };
-      changed = true;
-    }
-
-    if (changed) transaction.set(departureRef, { seats, updatedAt: new Date() }, { merge: true });
-  });
-}
-
 export async function deleteReservationPermanently(
   db: Firestore,
   reservationId: string,
@@ -182,8 +123,6 @@ export async function deleteReservationPermanently(
     });
     await batch.commit();
   }
-
-  await releaseReservationSeats(db, reservationId, reservation);
 
   const firestoreOperations: Array<(batch: WriteBatch) => void> = [
     ...jobsSnapshot.docs.map((job) => (batch: WriteBatch) => batch.delete(job.ref)),
