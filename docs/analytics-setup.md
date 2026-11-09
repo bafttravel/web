@@ -4,7 +4,7 @@
 
 - Dominio permitido: `www.baftravel.com` y subdominios de `baftravel.com`.
 - Microsoft Clarity: proyecto `zb406n8sbe`.
-- Google Tag Manager: contenedor `GTM-NV8SVZ52`.
+- Google Tag Manager: contenedor `GTM-5VXXFZ8J`.
 - GA4: flujo web `16306530153`, ID de medición `G-Z09FPGMT1D`.
 
 Los scripts no se solicitan hasta que la persona acepta analíticas. La preferencia se guarda localmente por 180 días; al retirarla se deniega el consentimiento, se eliminan las cookies analíticas conocidas y se recarga la página. En localhost y previews de Vercel las etiquetas no se cargan para no contaminar las cuentas de producción.

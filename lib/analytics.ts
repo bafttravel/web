@@ -3,7 +3,7 @@ export const ANALYTICS_SESSION_DENIAL_KEY = 'baft.analytics-denied-this-tab';
 export const ANALYTICS_CONSENT_EVENT = 'baft:analytics-consent-changed';
 export const OPEN_COOKIE_SETTINGS_EVENT = 'baft:open-cookie-settings';
 
-export const GTM_CONTAINER_ID = 'GTM-NV8SVZ52';
+export const GTM_CONTAINER_ID = 'GTM-5VXXFZ8J';
 export const GA4_MEASUREMENT_ID = 'G-Z09FPGMT1D';
 export const CLARITY_PROJECT_ID = 'zb406n8sbe';
 
