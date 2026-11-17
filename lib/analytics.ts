@@ -5,7 +5,7 @@ export const OPEN_COOKIE_SETTINGS_EVENT = 'baft:open-cookie-settings';
 
 export const GTM_CONTAINER_ID = 'GTM-5VXXFZ8J';
 export const GA4_MEASUREMENT_ID = 'G-Z09FPGMT1D';
-export const CLARITY_PROJECT_ID = 'zb406n8sbe';
+export const CLARITY_PROJECT_ID = 'zf76wryz9j';
 
 declare global {
   interface Window {

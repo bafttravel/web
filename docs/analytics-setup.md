@@ -3,7 +3,7 @@
 ## Identificadores instalados
 
 - Dominio permitido: `www.baftravel.com` y subdominios de `baftravel.com`.
-- Microsoft Clarity: proyecto `zb406n8sbe`.
+- Microsoft Clarity: proyecto `zf76wryz9j`.
 - Google Tag Manager: contenedor `GTM-5VXXFZ8J`.
 - GA4: flujo web `16306530153`, ID de medición `G-Z09FPGMT1D`.
 
