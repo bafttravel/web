@@ -4,14 +4,14 @@
 
 - Dominio permitido: `www.baftravel.com` y subdominios de `baftravel.com`.
 - Microsoft Clarity: proyecto `zf76wryz9j`.
-- Google Tag Manager: contenedor `GTM-5VXXFZ8J`.
-- GA4: flujo web `16306530153`, ID de medición `G-Z09FPGMT1D`.
+- Google Tag Manager: contenedor `GTM-WFF734DP`.
+- GA4: ID de medición `G-GK535ZKVSV`.
 
 Los scripts no se solicitan hasta que la persona acepta analíticas. La preferencia se guarda localmente por 180 días; al retirarla se deniega el consentimiento, se eliminan las cookies analíticas conocidas y se recarga la página. En localhost y previews de Vercel las etiquetas no se cargan para no contaminar las cuentas de producción.
 
 ## Configurar y publicar GTM
 
-El código de la aplicación envía eventos a `dataLayer`; para que aparezcan en GA4, el contenedor debe publicar una etiqueta de Google con el ID `G-Z09FPGMT1D` y etiquetas de evento GA4 asociadas a estos eventos personalizados:
+El código de la aplicación envía eventos a `dataLayer`; para que aparezcan en GA4, el contenedor debe publicar una etiqueta de Google con el ID `G-GK535ZKVSV` y etiquetas de evento GA4 asociadas a estos eventos personalizados:
 
 - `page_view`: parámetros `page_path` y `page_location` (la aplicación omite query strings).
 - `whatsapp_click`: `link_location`, `page_path` y, cuando existe, `item_slug`.
@@ -21,7 +21,7 @@ El código de la aplicación envía eventos a `dataLayer`; para que aparezcan en
 
 Antes de publicar:
 
-1. Crear una variable de capa de datos `baft_ga4_measurement_id` y una etiqueta **Google tag** que use esa variable (su valor es `G-Z09FPGMT1D`), activada en todas las páginas del contenedor. La app carga GTM solo tras el consentimiento.
+1. Crear una variable de capa de datos `baft_ga4_measurement_id` y una etiqueta **Google tag** que use esa variable (su valor es `G-GK535ZKVSV`), activada en todas las páginas del contenedor. La app carga GTM solo tras el consentimiento.
 2. Desactivar el envío automático de `page_view` en esa etiqueta y las pageviews automáticas por cambios de historial en GA4 Enhanced Measurement. La aplicación envía una pageview limpia por navegación para evitar duplicados y excluir parámetros de checkout.
 3. Crear etiquetas de evento GA4 para los eventos listados arriba con disparadores **Custom Event** del mismo nombre. Mapear los parámetros a variables de capa de datos.
 4. Revisar la pestaña **Consent settings** de las etiquetas: las etiquetas analíticas deben requerir `analytics_storage`. No activar etiquetas publicitarias; el código mantiene `ad_storage`, `ad_user_data` y `ad_personalization` denegados.
