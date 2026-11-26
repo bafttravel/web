@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { operationsFetch } from '@/lib/operations/client';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadMultipleImages } from '@/lib/utils/upload';
+import { UploadError, uploadMultipleImages } from '@/lib/utils/upload';
 import { deleteBlobByKey, getBlobKeyFromUrl } from '@/lib/utils/blob';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -375,8 +375,9 @@ export default function EditarPaquetePage({ params }: { params: Promise<{ id: st
     } catch (error) {
       console.error('Error updating paquete:', error);
       setSubmitState('error');
-      setSubmitMessage('No pudimos guardar los cambios. Revisa los datos e intenta nuevamente.');
-      toast.error('Error al actualizar la excursion');
+      const uploadMessage = error instanceof UploadError ? error.message : undefined;
+      setSubmitMessage(uploadMessage ?? 'No pudimos guardar los cambios. Revisa los datos e intenta nuevamente.');
+      toast.error(uploadMessage ?? 'Error al actualizar la excursion');
     } finally {
       setSaving(false);
     }

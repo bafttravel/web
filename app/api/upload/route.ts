@@ -37,26 +37,33 @@ function buildPublicUrl(key: string): string {
 }
 
 export async function POST(request: Request) {
+  let stage = 'configuration';
   try {
     ensureR2Config();
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    stage = 'multipart';
+    const formData = await request.formData().catch(() => null);
+    const file = formData?.get('file');
 
-    if (!file) {
+    if (!formData || !(file instanceof File) || file.size === 0) {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { error: 'La solicitud no contiene un archivo válido.' },
         { status: 400 }
       );
     }
 
-    const key = (formData.get('key') as string) || `${randomUUID()}-${file.name}`;
+    const requestedKey = formData.get('key');
+    const key = (typeof requestedKey === 'string' && requestedKey) || `${randomUUID()}-${file.name}`;
     if (key.startsWith('comprobantes/')) {
       const guard = await guardAdmin(request); if (guard instanceof NextResponse) return guard;
     }
 
+    stage = 'configuration';
+    const url = buildPublicUrl(key);
     const client = getR2Client();
+    stage = 'read-file';
     const body = Buffer.from(await file.arrayBuffer());
 
+    stage = 'r2-put';
     await client.send(
       new PutObjectCommand({
         Bucket: R2_BUCKET as string,
@@ -68,11 +75,26 @@ export async function POST(request: Request) {
       })
     );
 
-    return NextResponse.json({ url: buildPublicUrl(key), key });
+    return NextResponse.json({ url, key });
   } catch (error) {
-    console.error('Error uploading file:', error);
+    const reference = randomUUID();
+    const cause = error as { name?: string; $metadata?: { httpStatusCode?: number; requestId?: string } };
+    console.error('[upload] Error al guardar archivo', {
+      reference,
+      stage,
+      name: cause?.name,
+      r2Status: cause?.$metadata?.httpStatusCode,
+      r2RequestId: cause?.$metadata?.requestId,
+    });
     return NextResponse.json(
-      { error: 'Upload failed' },
+      {
+        error: stage === 'configuration'
+          ? 'El almacenamiento no está configurado correctamente.'
+          : stage === 'r2-put'
+            ? 'No se pudo guardar el archivo en Cloudflare R2.'
+            : 'No se pudo procesar el archivo.',
+        reference,
+      },
       { status: 500 }
     );
   }

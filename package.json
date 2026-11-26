@@ -8,7 +8,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --test tests/package-flow.test.mts tests/rich-html.test.mts tests/wetravel-events.test.mts tests/wetravel-tracking.test.mts tests/i18n.test.mts tests/deepl-queue.test.mts tests/operations.test.mts tests/admin-design.test.mts tests/voucher.test.mts",
+    "test": "node --test tests/package-flow.test.mts tests/rich-html.test.mts tests/wetravel-events.test.mts tests/wetravel-tracking.test.mts tests/i18n.test.mts tests/deepl-queue.test.mts tests/operations.test.mts tests/admin-design.test.mts tests/voucher.test.mts tests/upload.test.mts",
     "test:e2e": "playwright test",
     "test:admin": "node --test tests/operations.test.mts",
     "test:e2e:admin": "playwright test e2e/operations-auth.spec.ts --output=.playwright-operations-results",

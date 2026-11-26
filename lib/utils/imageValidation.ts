@@ -1,3 +1,6 @@
+// Leave room for multipart headers below Vercel's 4.5 MB request limit.
+export const MAX_MULTIPART_FILE_BYTES = 4 * 1024 * 1024;
+
 export function validateImageSize(file: File, maxSizeMB: number = 5): boolean {
   const maxSizeBytes = maxSizeMB * 1024 * 1024;
   return file.size <= maxSizeBytes;
@@ -21,42 +24,29 @@ export async function compressImage(file: File, maxSizeMB: number = 2): Promise<
       const img = document.createElement('img');
       img.src = event.target?.result as string;
       
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        
-        // Calcular nueva dimensión manteniendo aspecto
-        const maxDimension = 2560;
-        if (width > height && width > maxDimension) {
-          height = (height * maxDimension) / width;
-          width = maxDimension;
-        } else if (height > maxDimension) {
-          width = (width * maxDimension) / height;
-          height = maxDimension;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name, {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
-            } else {
-              reject(new Error('Error al comprimir imagen'));
+      img.onload = async () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('El navegador no pudo preparar la imagen.');
+
+          for (const maxDimension of [2560, 1920, 1440, 1080]) {
+            const scale = Math.min(1, maxDimension / Math.max(img.naturalWidth, img.naturalHeight));
+            canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+            canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            for (const quality of [0.9, 0.75, 0.6]) {
+              const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, 'image/jpeg', quality));
+              if (!blob || blob.size === 0 || blob.size > maxSizeMB * 1024 * 1024) continue;
+              resolve(new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' }));
+              return;
             }
-          },
-          'image/jpeg',
-          0.9 // Calidad del 90%
-        );
+          }
+          throw new Error('No pudimos reducir la imagen lo suficiente. Probá con una versión más liviana.');
+        } catch (error) {
+          reject(error);
+        }
       };
       
       img.onerror = () => reject(new Error('Error al cargar imagen'));

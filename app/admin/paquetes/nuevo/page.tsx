@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { operationsFetch } from '@/lib/operations/client';
 import { collection, Timestamp, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadMultipleImages } from '@/lib/utils/upload';
+import { UploadError, uploadMultipleImages } from '@/lib/utils/upload';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import ProtectedRoute from '@/components/admin/ProtectedRoute';
@@ -240,8 +240,9 @@ export default function NuevoPaquetePage() {
     } catch (error) {
       console.error('Error creating paquete:', error);
       setSubmitState('error');
-      setSubmitMessage('No pudimos crear la excursion. Revisa los datos e intenta nuevamente.');
-      toast.error('Error al crear la excursion');
+      const uploadMessage = error instanceof UploadError ? error.message : undefined;
+      setSubmitMessage(uploadMessage ?? 'No pudimos crear la excursion. Revisa los datos e intenta nuevamente.');
+      toast.error(uploadMessage ?? 'Error al crear la excursion');
     } finally {
       setLoading(false);
     }
