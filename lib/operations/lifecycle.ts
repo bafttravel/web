@@ -4,7 +4,7 @@ import { snapshotOperations } from './server';
 import { EMPTY_RESERVATION_OPERATIONS, type PackageOperations } from './types';
 import { buildAdminNuevaReservaHtml, buildAdminNuevaReservaText, buildClienteCompraConfirmadaHtml, buildClienteCompraConfirmadaText, buildClienteVoucher48hsHtml, buildClienteVoucher48hsText } from '@/lib/emails/reserva-confirmada';
 import { getFromEmail } from '@/lib/resend';
-import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { INTERNAL_NOTIFICATIONS_EMAIL, SITE_NAME } from '@/lib/constants';
 import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 
 const escape = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -31,7 +31,7 @@ export async function prepareReservationOperations(reservationId: string, queueC
     jobs.push({ id: `${reservationId}_vendedor_aviso`, type: 'vendedor_aviso', to: vendor.data()!.email, subject: `Venta confirmada: ${title}`, html: `<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Una venta referida por vos fue confirmada</h2><p>${escape(text).replace(/\n/g, '<br/>')}</p></div>`, text, nextAttemptAt: now, path: 'vendorNotification' });
   }
   const emailData = { customerName: escape(data.customerName), experienceTitle: escape(title), dateFormatted: String(data.date), peopleLabel: `${data.people} pasajeros`, amountFormatted: `${(Number(data.amountTotal) / 100).toFixed(2)} ${String(data.currency).toUpperCase()}`, reservationCode: code, lookupUrl: siteUrl ? `${siteUrl}/consultar-reserva?code=${encodeURIComponent(code)}` : undefined, sessionId: reservationId, customerEmail: escape(data.customerEmail), pickupAddress: escape(operations.pickupAddress), pickupTime: operations.pickupTime, pickupHotel: escape(operations.pickupHotelName) };
-  if (confirmed && queueCustomer && CONTACT_INFO.email && !data.emailDelivery?.adminNotification?.jobId) jobs.push({ id: `${reservationId}_admin_aviso`, type: 'admin_aviso', to: CONTACT_INFO.email, subject: `Nueva reserva: ${title}`, html: buildAdminNuevaReservaHtml(emailData), text: buildAdminNuevaReservaText(emailData), nextAttemptAt: now, path: 'adminNotification' });
+  if (confirmed && queueCustomer && INTERNAL_NOTIFICATIONS_EMAIL && !data.emailDelivery?.adminNotification?.jobId) jobs.push({ id: `${reservationId}_admin_aviso`, type: 'admin_aviso', to: INTERNAL_NOTIFICATIONS_EMAIL, subject: `Nueva reserva: ${title}`, html: buildAdminNuevaReservaHtml(emailData), text: buildAdminNuevaReservaText(emailData), nextAttemptAt: now, path: 'adminNotification' });
   if (confirmed && queueCustomer && data.customerEmail) {
     if (!data.emailDelivery?.customerConfirmation?.jobId) jobs.push({ id: `${reservationId}_cliente_confirmacion_compra`, type: 'cliente_confirmacion_compra', to: data.customerEmail, subject: `Compra confirmada: ${title}`, html: buildClienteCompraConfirmadaHtml(emailData), text: buildClienteCompraConfirmadaText(emailData), nextAttemptAt: now, path: 'customerConfirmation' });
     if (data.status === 'reserved' && !data.emailDelivery?.customerVoucher?.jobId) {

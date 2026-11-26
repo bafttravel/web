@@ -14,7 +14,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { requireAdminToken } from '@/lib/adminAuth';
-import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { INTERNAL_NOTIFICATIONS_EMAIL, SITE_NAME } from '@/lib/constants';
 import { getFromEmail, isResendConfigured } from '@/lib/resend';
 import { sendEmailJobNow } from '@/lib/sales/send-email-job';
 
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
   const config = {
     resendConfigured: isResendConfigured(),
     from: (() => { try { return getFromEmail(); } catch { return null; } })(),
-    adminEmail: CONTACT_INFO.email,
+    adminEmail: INTERNAL_NOTIFICATIONS_EMAIL,
     siteName: SITE_NAME,
     cronEmailPath: '/api/cron/email',
     cronVoucherHint: 'El voucher 48hs se programa con nextAttemptAt; el cron lo envía cuando llega la fecha.',

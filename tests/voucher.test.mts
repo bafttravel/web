@@ -84,6 +84,10 @@ test('minimal reminder escapes customer data and promises the attached voucher w
   const data = { customerName: '<script>test</script>', experienceTitle: 'Discovery C/T', dateFormatted: '17/01/2027', pickupTime: '07:30', reservationCode: 'BAFT-5806', lookupUrl: 'javascript:alert(1)' };
   const brand = { name: 'BAFT', email: 'contact@example.test', whatsapp: '+54 9 2966 701907' };
   const html = reminderHtml(data, brand); const text = reminderText(data, brand);
+  const withoutContactEmail = reminderText(data, { ...brand, email: '' });
+  assert.match(withoutContactEmail, /respondé este correo\./);
+  assert.doesNotMatch(withoutContactEmail, /escribinos a/);
+  assert.match(withoutContactEmail, /WhatsApp: https:\/\/wa\.me\//);
   assert.match(html, /&lt;script&gt;test&lt;\/script&gt;/); assert.doesNotMatch(html, /<script>|linear-gradient|box-shadow|<table|javascript:/);
   assert.match(text, /adjuntamos el voucher/); assert.match(text, /07:30/); assert.match(text, /A confirmar/);
   assert.match(text, /BAFT-5806/); assert.match(text, /5492966701907/);

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getPayment, isPaymentApproved, isPaymentRejected, mapPaymentStatusToReservationStatus } from '@/lib/mercadopago';
 import { getFromEmail, isResendConfigured, resend } from '@/lib/resend';
 import { getPaqueteById } from '@/lib/paquetes';
-import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { INTERNAL_NOTIFICATIONS_EMAIL, SITE_NAME } from '@/lib/constants';
 import {
   buildClienteCompraConfirmadaHtml,
   buildClienteCompraConfirmadaText,
@@ -1007,12 +1007,12 @@ export async function POST(request: Request) {
                 });
               }
 
-              if (!emailAdminSnap.exists() && CONTACT_INFO.email && isApproved) {
+              if (!emailAdminSnap.exists() && INTERNAL_NOTIFICATIONS_EMAIL && isApproved) {
                 const adminSendId = sendResults.admin[reservationId] ?? null;
                 queueSet(emailAdminRef, {
                   type: 'admin_aviso',
                   status: adminSendId ? 'sent' : 'pending',
-                  to: CONTACT_INFO.email,
+                  to: INTERNAL_NOTIFICATIONS_EMAIL,
                   from,
                   replyTo,
                   subject: `Nueva reserva: ${finalPackageTitle || 'Paquete'} — ${customerName || customerEmail}`,
@@ -1663,11 +1663,11 @@ export async function POST(request: Request) {
         }
 
         // Email al admin (solo si aprobado)
-        if (!emailAdminSnap.exists() && CONTACT_INFO.email && isApproved) {
+        if (!emailAdminSnap.exists() && INTERNAL_NOTIFICATIONS_EMAIL && isApproved) {
           tx.set(emailAdminRef, {
             type: 'admin_aviso',
             status: directSend.admin ? 'sent' : 'pending',
-            to: CONTACT_INFO.email,
+            to: INTERNAL_NOTIFICATIONS_EMAIL,
             from,
             replyTo,
             subject: `Nueva reserva: ${finalPackageTitle || 'Paquete'} — ${customerName || customerEmail}`,

@@ -66,12 +66,14 @@ export default async function ContactoPage() {
                   </a>
                 </li>
               )}
-              <li className="flex items-center gap-4">
-                <Mail className="w-6 h-6 text-primary shrink-0" strokeWidth={2} />
-                <a href={SOCIAL_MEDIA.email} className="hover:text-primary transition-colors">
-                  {CONTACT_INFO.email}
-                </a>
-              </li>
+              {SOCIAL_MEDIA.email && (
+                <li className="flex items-center gap-4">
+                  <Mail className="w-6 h-6 text-primary shrink-0" strokeWidth={2} />
+                  <a href={SOCIAL_MEDIA.email} className="hover:text-primary transition-colors">
+                    {CONTACT_INFO.email}
+                  </a>
+                </li>
+              )}
             </ul>
           </div>
         </div>

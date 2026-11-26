@@ -24,6 +24,7 @@ export type SiteConfig = {
   };
   company: {
     adminEmailDefault: string;
+    internalNotificationsEmail: string;
     whatsappMessageDefault: string;
     contact: {
       direccion: string;
@@ -282,6 +283,7 @@ function mapSimpleSiteConfig(input: Record<string, any>): Partial<SiteConfig> {
     },
     company: {
       adminEmailDefault: email,
+      internalNotificationsEmail: ensureString(input.contacto?.internalNotificationsEmail, '', { allowEmpty: true }),
       whatsappMessageDefault: `Hola ${siteName}! Quiero consultar por: `,
       contact: {
         direccion: 'Patagonia, Argentina',
@@ -435,6 +437,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
   },
   company: {
     adminEmailDefault: 'admin@example.com',
+    internalNotificationsEmail: '',
     whatsappMessageDefault: 'Hola! Quiero consultar por: ',
     contact: {
       direccion: '',
@@ -569,6 +572,7 @@ function normalizeSiteConfig(input: SiteConfig): SiteConfig {
     },
     company: {
       adminEmailDefault: ensureString(input.company?.adminEmailDefault, DEFAULT_SITE_CONFIG.company.adminEmailDefault),
+      internalNotificationsEmail: ensureString(input.company?.internalNotificationsEmail, '', { allowEmpty: true }),
       whatsappMessageDefault: ensureString(input.company?.whatsappMessageDefault, DEFAULT_SITE_CONFIG.company.whatsappMessageDefault),
       contact: {
         direccion: ensureString(input.company?.contact?.direccion, DEFAULT_SITE_CONFIG.company.contact.direccion, { allowEmpty: true }),

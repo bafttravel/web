@@ -10,7 +10,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { getPaqueteById } from '@/lib/paquetes';
-import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { INTERNAL_NOTIFICATIONS_EMAIL, SITE_NAME } from '@/lib/constants';
 import {
   buildAdminNuevaReservaHtml,
   buildAdminNuevaReservaText,
@@ -564,11 +564,11 @@ export async function POST(request: Request) {
           updatedAt: now,
         });
       }
-      if (!emailAdminSnap.exists() && CONTACT_INFO.email) {
+      if (!emailAdminSnap.exists() && INTERNAL_NOTIFICATIONS_EMAIL) {
         tx.set(emailAdminRef, {
           type: 'admin_aviso',
           status: adminSendId ? 'sent' : 'pending',
-          to: CONTACT_INFO.email,
+          to: INTERNAL_NOTIFICATIONS_EMAIL,
           from,
           replyTo,
           subject: `Nueva reserva: ${finalPackageTitle || 'Paquete'} — ${customerName || customerEmail}`,

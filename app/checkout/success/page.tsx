@@ -9,7 +9,7 @@ import DirectVerification from '@/components/checkout/DirectVerification';
 import WeTravelSuccess from '@/components/checkout/WeTravelSuccess';
 import SuccessConfirmation from '@/components/checkout/SuccessConfirmation';
 import OrderVerification from '@/components/checkout/OrderVerification';
-import { CONTACT_INFO, SITE_NAME, SOCIAL_MEDIA } from '@/lib/constants';
+import { SITE_NAME, SOCIAL_MEDIA } from '@/lib/constants';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { buildVentaStatuses } from '@/lib/sales/status';
@@ -447,7 +447,7 @@ export default async function CheckoutSuccessPage({
             </div>
             {/* {!orderId && !hasSession && (
               <p className="mt-3 rounded-lg bg-yellow-50 p-3 text-xs text-yellow-700">
-                {t('missingSession', { email: CONTACT_INFO.email })}
+                {t('missingSession')}
               </p>
             )} */}
           </div>
@@ -508,7 +508,7 @@ export default async function CheckoutSuccessPage({
         </div>
 
         <p className="mt-6 text-center text-xs text-gray-500">
-          {SITE_NAME} · {t('questions', { email: CONTACT_INFO.email })}
+          {SITE_NAME} · <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="hover:underline">{t('questions')}</a>
         </p>
       </div>
     </div>

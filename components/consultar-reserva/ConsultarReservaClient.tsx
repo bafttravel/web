@@ -231,7 +231,7 @@ export default function ConsultarReservaClient({ initialCode }: { initialCode: s
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('antiScamNotice')}</div>
                 <div className="mt-2">{t('officialChannelsNotice', { siteName: SITE_NAME })}</div>
                 <div className="mt-2 text-sm text-gray-900">
-                  {t('officialContact')}: <span className="font-semibold">{CONTACT_INFO.email}</span> ·{' '}
+                  {t('officialContact')}: {CONTACT_INFO.email && <><span className="font-semibold">{CONTACT_INFO.email}</span> ·{' '}</>}
                   <span className="font-semibold">{CONTACT_INFO.telefono}</span>
                 </div>
               </div>

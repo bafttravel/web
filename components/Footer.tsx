@@ -118,10 +118,12 @@ export default function Footer() {
                 <Phone className="h-4 w-4 text-white flex-shrink-0" />
                 <span className="text-gray-400">{telefonos}</span>
               </li>
-              <li className="flex items-center space-x-2">
-                <Mail className="h-4 w-4 text-white flex-shrink-0" />
-                <span className="text-gray-400">{CONTACT_INFO.email}</span>
-              </li>
+              {CONTACT_INFO.email && (
+                <li className="flex items-center space-x-2">
+                  <Mail className="h-4 w-4 text-white flex-shrink-0" />
+                  <span className="text-gray-400">{CONTACT_INFO.email}</span>
+                </li>
+              )}
             </ul>
           </div>
 

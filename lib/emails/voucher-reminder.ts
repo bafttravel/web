@@ -18,7 +18,9 @@ export function reminderText(data: ReminderData, brand: Brand): string {
     `Retiro: ${[data.pickupHotel, data.pickupAddress].filter(Boolean).join(' — ') || 'A confirmar'}`,
     ...(data.reservationCode ? [`Reserva: ${data.reservationCode}`] : []),
     ...(safeLookup(data.lookupUrl) ? [`Consultar reserva: ${safeLookup(data.lookupUrl)}`] : []), '',
-    `Si tenés alguna consulta, respondé este correo o escribinos a ${brand.email}.`,
+    brand.email
+      ? `Si tenés alguna consulta, respondé este correo o escribinos a ${brand.email}.`
+      : 'Si tenés alguna consulta, respondé este correo.',
     ...(brand.whatsapp ? [`WhatsApp: https://wa.me/${brand.whatsapp.replace(/\D/g, '')}`] : []), '',
     '¡Que disfrutes tu día!', brand.name,
   ].join('\n');

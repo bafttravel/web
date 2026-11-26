@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { getPaqueteById } from '@/lib/paquetes';
-import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { INTERNAL_NOTIFICATIONS_EMAIL, SITE_NAME } from '@/lib/constants';
 import {
   buildAdminNuevaReservaHtml,
   buildAdminNuevaReservaText,
@@ -194,7 +194,7 @@ export async function finalizeWeTravelPaidCheckout(input: {
       subject: `Recordatorio de salida (48 hs): ${finalTitle}`, html: htmlVoucher, text: textVoucher, attempts: 0, lastError: null,
       providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: nextVoucherAt!,
       scheduledDepartureAtMs: voucherSchedule.kind === 'scheduled' ? voucherSchedule.departureAtMs : null, createdAt: now, updatedAt: now });
-    if (!adminSnap.exists() && CONTACT_INFO.email) tx.set(adminJobRef, { type: 'admin_aviso', status: 'pending', to: CONTACT_INFO.email, from, replyTo,
+    if (!adminSnap.exists() && INTERNAL_NOTIFICATIONS_EMAIL) tx.set(adminJobRef, { type: 'admin_aviso', status: 'pending', to: INTERNAL_NOTIFICATIONS_EMAIL, from, replyTo,
       subject: `Nueva reserva: ${finalTitle} — ${customerName || customerEmail}`, html: htmlAdmin, text: textAdmin, attempts: 0, lastError: null,
       providerMessageId: null, sentAt: null, wetravelPaymentId: paymentId, reservationId, nextAttemptAt: now, createdAt: now, updatedAt: now });
     tx.set(paymentRef, { method: 'wetravel', status: 'paid', amount: amountTotal, currency, message: `Pago aprobado por WeeTravel (ID: ${paymentId})`,

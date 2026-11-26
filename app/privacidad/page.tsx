@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import HomeFooter from '@/components/home/HomeFooter';
-import { CONTACT_INFO } from '@/lib/constants';
 import { getLocale } from 'next-intl/server';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -71,8 +70,10 @@ export default async function PrivacyPage() {
               </ul>
             </section>
             <p>
-              {isEnglish ? 'Questions about this notice? Contact us at ' : '¿Tenés consultas sobre este aviso? Escribinos a '}
-              <a className="font-semibold underline underline-offset-2" href={`mailto:${CONTACT_INFO.email}`}>{CONTACT_INFO.email}</a>.
+              {isEnglish ? 'Questions about this notice? Visit our ' : '¿Tenés consultas sobre este aviso? Visitá nuestra '}
+              <Link className="font-semibold underline underline-offset-2" href={`/${locale}/contacto`}>
+                {isEnglish ? 'contact page' : 'página de contacto'}
+              </Link>.
             </p>
             <p className="text-xs leading-5 text-slate-500">
               {isEnglish

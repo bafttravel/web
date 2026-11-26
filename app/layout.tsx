@@ -102,7 +102,7 @@ export const metadata: Metadata = {
   classification: 'Travel Agency',
   other: {
     'contact:phone_number': CONTACT_INFO.telefono,
-    'contact:email': CONTACT_INFO.email,
+    ...(CONTACT_INFO.email ? { 'contact:email': CONTACT_INFO.email } : {}),
     'contact:address': CONTACT_INFO.direccion,
   },
   icons: {

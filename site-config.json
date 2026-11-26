@@ -19,7 +19,7 @@
     "image": "/images/banner.jpg"
   },
   "contacto": {
-    "email": "baftcontact@gmail.com",
+    "internalNotificationsEmail": "reservas@baftravel.com",
     "phone": "2966701907",
     "businessHours": "10:00hs a 20:00hs"
   },

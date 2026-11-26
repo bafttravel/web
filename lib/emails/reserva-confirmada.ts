@@ -158,7 +158,7 @@ export function buildClienteCompraConfirmadaHtml(data: ReservaEmailData): string
 
       <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid #e2e8f0; font-size: 0.75rem; color: #64748b; line-height: 1.7;">
         <div>${LEGAL_INFO.legajoRnav ? `Legajo RNAV: <strong>${LEGAL_INFO.legajoRnav}</strong>` : ''}</div>
-        <div>${CONTACT_INFO.email} · ${CONTACT_INFO.telefono}</div>
+        <div>${[CONTACT_INFO.email, CONTACT_INFO.telefono].filter(Boolean).join(' · ')}</div>
       </div>
     </div>
   </div>
@@ -303,7 +303,7 @@ export function buildClienteReservaConfirmadaHtml(data: ReservaEmailData): strin
       <div style="text-align: center; padding: 24px 0; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom: 24px;">
         <p style="margin:0 0 12px; font-size: 0.9375rem; color: #475590; font-weight: 600;">¿Tenés preguntas?</p>
         <a href="${whatsappUrl}" style="display: inline-block; background: #16A34A; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9375rem;">💬 Escribinos por WhatsApp</a>
-        <p style="margin:12px 0 0; font-size: 0.875rem; color: #64748b;">${CONTACT_INFO.email} | ${CONTACT_INFO.telefono}</p>
+        <p style="margin:12px 0 0; font-size: 0.875rem; color: #64748b;">${[CONTACT_INFO.email, CONTACT_INFO.telefono].filter(Boolean).join(' | ')}</p>
       </div>
 
       <!-- Footer -->
@@ -349,7 +349,7 @@ export function buildClienteReservaConfirmadaText(data: ReservaEmailData): strin
     '',
     `¿Preguntas? Contactanos:`,
     `WhatsApp: ${whatsappUrl}`,
-    `Email: ${CONTACT_INFO.email}`,
+    ...(CONTACT_INFO.email ? [`Email: ${CONTACT_INFO.email}`] : []),
     `Teléfono: ${CONTACT_INFO.telefono}`,
     '',
     `© ${new Date().getFullYear()} ${SITE_NAME}`,

@@ -44,7 +44,7 @@ import {
   buildClienteVoucher48hsHtml,
   buildClienteVoucher48hsText,
 } from '@/lib/emails/reserva-confirmada';
-import { CONTACT_INFO, SITE_NAME } from '@/lib/constants';
+import { INTERNAL_NOTIFICATIONS_EMAIL, SITE_NAME } from '@/lib/constants';
 import {
   computeReservationPricing,
   getPackageAddonOptions,
@@ -420,7 +420,7 @@ async function enqueueReservationEmailJob(options: {
   const to =
     options.type === 'cliente_confirmacion_compra' || options.type === 'cliente_voucher_48hs'
       ? reservation.customerEmail
-      : CONTACT_INFO.email;
+      : INTERNAL_NOTIFICATIONS_EMAIL;
   const html =
     options.type === 'cliente_confirmacion_compra'
       ? buildClienteCompraConfirmadaHtml(emailData)

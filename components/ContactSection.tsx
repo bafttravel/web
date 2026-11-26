@@ -130,7 +130,7 @@ export default function ContactSection({ showTitle = true, paqueteTitulo, paquet
       </motion.div>
 
        <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50/70 p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-gray-700">
+              <div className={`grid grid-cols-1 gap-4 text-gray-700 ${emailHref && emailLabel ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
                 <div className="flex items-start gap-3">
                   <MapPin className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
                   <div>
@@ -152,15 +152,17 @@ export default function ContactSection({ showTitle = true, paqueteTitulo, paquet
                     </a>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <Mail className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">{t('email')}</div>
-                    <a className="text-sm hover:text-primary transition-colors" href={emailHref}>
-                      {emailLabel}
-                    </a>
+                {emailHref && emailLabel && (
+                  <div className="flex items-start gap-3">
+                    <Mail className="h-5 w-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{t('email')}</div>
+                      <a className="text-sm hover:text-primary transition-colors" href={emailHref}>
+                        {emailLabel}
+                      </a>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
     </div>

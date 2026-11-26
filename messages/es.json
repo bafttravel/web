@@ -290,12 +290,12 @@
     "reservationCode": "Código de reserva",
     "generatingCode": "Estamos generando tu código de reserva.",
     "codeDelivery": "Lo recibirás en los próximos minutos por correo electrónico y/o WhatsApp.",
-    "missingSession": "No detectamos el identificador de sesión. Si esto sucede, escribinos por WhatsApp o mandá un email a {email} para que lo verifiquemos.",
+    "missingSession": "No detectamos el identificador de sesión. Escribinos por WhatsApp para que lo verifiquemos.",
     "checkWhatsApp": "Verificá tu WhatsApp.",
     "presentCode": "Presentá tu código de reserva el día de la actividad.",
     "writeWhatsApp": "Escribir por WhatsApp",
     "goHome": "Ir al inicio",
-    "questions": "Cualquier consulta: {email}"
+    "questions": "Consultas por WhatsApp"
   },
   "public": {
     "lookupTitle": "Consultar reserva",

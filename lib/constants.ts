@@ -33,6 +33,8 @@ const adminEmailCandidate = String(
   .toLowerCase();
 export const ADMIN_EMAIL = adminEmailCandidate || 'admin@example.com';
 
+export const INTERNAL_NOTIFICATIONS_EMAIL = siteConfig.company.internalNotificationsEmail || siteConfig.company.contact.email;
+
 export const CONTACT_INFO = {
   direccion: siteConfig.company.contact.direccion,
   horario: siteConfig.company.contact.horario,

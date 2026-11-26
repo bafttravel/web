@@ -18,7 +18,7 @@ export default function SchemaOrg() {
     logo: logoUrl,
     image: logoUrl,
     telephone: CONTACT_INFO.telefono,
-    email: CONTACT_INFO.email,
+    email: CONTACT_INFO.email || undefined,
     legalName: LEGAL_INFO.razonSocial,
     taxID: LEGAL_INFO.cuit,
     address: {
@@ -58,7 +58,7 @@ export default function SchemaOrg() {
     logo: logoUrl,
     image: logoUrl,
     telephone: CONTACT_INFO.telefono,
-    email: CONTACT_INFO.email,
+    email: CONTACT_INFO.email || undefined,
     legalName: LEGAL_INFO.razonSocial,
     taxID: LEGAL_INFO.cuit,
     address: {

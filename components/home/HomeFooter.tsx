@@ -117,12 +117,14 @@ export default function HomeFooter() {
                 <Phone className="h-4 w-4 flex-shrink-0 text-white" />
                 <span className="text-white/82">{telefonos}</span>
               </li>
-              <li className="flex items-center space-x-2">
-                <Mail className="h-4 w-4 flex-shrink-0 text-white" />
-                <a href={SOCIAL_MEDIA.email} className="text-white/82 transition-colors hover:text-white">
-                  {CONTACT_INFO.email}
-                </a>
-              </li>
+              {SOCIAL_MEDIA.email && (
+                <li className="flex items-center space-x-2">
+                  <Mail className="h-4 w-4 flex-shrink-0 text-white" />
+                  <a href={SOCIAL_MEDIA.email} className="text-white/82 transition-colors hover:text-white">
+                    {CONTACT_INFO.email}
+                  </a>
+                </li>
+              )}
             </ul>
           </div>
 
