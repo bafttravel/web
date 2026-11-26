@@ -53,6 +53,7 @@ import {
 } from '@/lib/packages/resolve-departure';
 import { buildReservationPricingSnapshot } from '@/lib/sales/orchestrator';
 import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
+import { buildReservationAttachment } from '@/lib/reservas/attachments';
 
 const COLLECTION = 'reservas';
 
@@ -701,16 +702,7 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
           tx.set(seatResRef, { seats: seatsMap, updatedAt: now }, { merge: true });
         }
 
-        const attachments =
-          payload.attachments?.map((attachment) => ({
-            id: randomUUID(),
-            name: attachment.name,
-            type: attachment.type,
-            url: attachment.url,
-            uploadedBy: attachment.uploadedBy ?? 'admin',
-            key: attachment.key,
-            createdAt: now,
-          })) ?? [];
+        const attachments = payload.attachments?.map((attachment) => buildReservationAttachment(attachment, now)) ?? [];
 
         const customerEmailLower = normalizeEmail(payload.customerEmail);
         const customerNameLower = String(payload.customerName ?? '').trim().toLowerCase() || null;
@@ -1063,7 +1055,12 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       });
     }
     if (payload.attachments?.length) {
-      await addReservaAttachments(payload.reservationId, payload.attachments);
+      try {
+        await addReservaAttachments(payload.reservationId, payload.attachments);
+      } catch (error) {
+        console.error('[admin/reservas] Error vinculando adjuntos a la reserva:', error);
+        return NextResponse.json({ error: 'Los archivos se subieron, pero no se pudieron vincular a la reserva.' }, { status: 500 });
+      }
     }
     if (payload.removeAttachments?.length) {
       await removeReservaAttachmentsById(

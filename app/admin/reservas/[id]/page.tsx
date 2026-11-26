@@ -2,6 +2,8 @@
 import AdminFilePicker from '@/components/admin/AdminFilePicker';
 import AdminDatePicker from '@/components/admin/AdminDatePicker';
 import { RESERVATION_FILE_ACCEPT } from '@/lib/admin/files';
+import { MAX_MULTIPART_FILE_BYTES } from '@/lib/utils/imageValidation';
+import { uploadFile } from '@/lib/utils/upload';
 import { adminDateLabel, adminDateTimeLabel } from '@/lib/admin/dates';
 import ReservationOperationsPanel from '@/components/admin/ReservationOperationsPanel';
 import { collectorForPayment } from '@/lib/operations/calculations';
@@ -694,22 +696,19 @@ export default function ReservaDetailPage() {
     try {
       const uploaded = [];
       for (const file of Array.from(files)) {
-        const fd = new FormData();
-        fd.append('file', file);
-        const up = await fetch('/api/upload', { method: 'POST', body: fd });
-        if (!up.ok) throw new Error();
-        const data = await up.json();
-        uploaded.push({ url: data.url, name: file.name, type: file.type, uploadedBy: 'admin' });
+        const { url, key } = await uploadFile(file);
+        uploaded.push({ url, key, name: file.name, type: file.type || 'application/octet-stream', uploadedBy: 'admin' });
       }
-      const res = await fetch('/api/admin/reservas', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reservationId: reserva.id, attachments: uploaded }),
-      });
-      if (!res.ok) throw new Error();
+      await patchReservation(token, { attachments: uploaded });
       toast.success('Comprobante agregado');
       await load(false);
-    } catch { toast.error('No pudimos subir el comprobante'); throw new Error('No se pudieron adjuntar los archivos. Intentá de nuevo.'); } finally { setUploading(false); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudieron adjuntar los archivos.';
+      toast.error(message);
+      throw new Error(message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const deleteAttachment = async (id: string) => {
@@ -1071,7 +1070,7 @@ export default function ReservaDetailPage() {
                     <div><h2 className="text-base font-semibold text-slate-900">Comprobantes · {attachments.length}</h2><p className="mt-1 text-xs text-slate-500">Archivos relacionados con la venta y sus pagos.</p></div>
                   </div>
                 </div>
-                <AdminFilePicker className="mt-4" label="Adjuntar comprobantes" description="PDF e imágenes" accept={RESERVATION_FILE_ACCEPT} multiple maxFiles={10} busy={uploading} onFilesSelected={uploadFiles} processingLabel="Subiendo comprobantes…" successLabel="Comprobantes adjuntos" showSelectedFiles={false} retryable={false} />
+                 <AdminFilePicker className="mt-4" label="Adjuntar comprobantes" description="PDF e imágenes" accept={RESERVATION_FILE_ACCEPT} maxSize={MAX_MULTIPART_FILE_BYTES} multiple maxFiles={10} busy={uploading} onFilesSelected={uploadFiles} processingLabel="Subiendo comprobantes…" successLabel="Comprobantes adjuntos" showSelectedFiles={false} retryable={false} />
                 {attachments.length === 0 ? (
                   <p className="mt-3 text-sm text-slate-500">Sin archivos.</p>
                 ) : (

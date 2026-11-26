@@ -7,14 +7,14 @@ export type UploadResult = {
 
 export class UploadError extends Error {}
 
-async function sendUpload(file: File, kind: 'imagen' | 'video'): Promise<UploadResult> {
-  const tooLarge = `El archivo supera el límite de 4 MB para subir ${kind === 'imagen' ? 'imágenes' : 'videos'}. Probá con una versión más liviana.`;
+async function sendUpload(file: File, description: string): Promise<UploadResult> {
+  const tooLarge = 'El archivo supera el límite de 4 MB. Probá con una versión más liviana.';
   if (file.size > MAX_MULTIPART_FILE_BYTES) throw new UploadError(tooLarge);
 
   const formData = new FormData();
   formData.append('file', file);
   const response = await fetch('/api/upload', { method: 'POST', body: formData }).catch(() => {
-    throw new UploadError(`No se pudo conectar para subir ${kind === 'imagen' ? 'la imagen' : 'el video'}.`);
+    throw new UploadError(`No se pudo conectar para subir ${description}.`);
   });
   if (response.status === 413) throw new UploadError(tooLarge);
 
@@ -39,7 +39,7 @@ export async function uploadImage(file: File): Promise<UploadResult> {
       throw new UploadError(error instanceof Error ? error.message : 'No se pudo comprimir la imagen.');
     }
   }
-  return sendUpload(fileToUpload, 'imagen');
+  return sendUpload(fileToUpload, 'la imagen');
 }
 
 export async function uploadMultipleImages(files: File[]): Promise<UploadResult[]> {
@@ -49,5 +49,9 @@ export async function uploadMultipleImages(files: File[]): Promise<UploadResult[
 
 /** Sube un archivo de video (mp4, webm, etc.) a /api/upload. Sin compresión. */
 export async function uploadVideo(file: File): Promise<string> {
-  return (await sendUpload(file, 'video')).url;
+  return (await sendUpload(file, 'el video')).url;
+}
+
+export function uploadFile(file: File): Promise<UploadResult> {
+  return sendUpload(file, 'el archivo');
 }

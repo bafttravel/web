@@ -14,7 +14,6 @@ import {
   type DocumentSnapshot,
 } from 'firebase/firestore';
 
-import { randomUUID } from 'crypto';
 import { db } from '@/lib/firebase';
 import { deleteBlobAsset } from '@/lib/blob';
 import {
@@ -23,6 +22,7 @@ import {
   reserveNextReservationCode,
 } from '@/lib/reservas/code';
 import { serializeFirestoreData } from '@/lib/utils/serialize';
+import { buildReservationAttachment, type ReservationAttachmentInput } from '@/lib/reservas/attachments';
 import type {
   Reservation,
   ReservationAttachment,
@@ -32,7 +32,7 @@ import type {
 
 const COLLECTION = 'reservas';
 
-export type ReservationAttachmentInput = Omit<ReservationAttachment, 'id' | 'createdAt'>;
+export type { ReservationAttachmentInput } from '@/lib/reservas/attachments';
 export type CreateReservaPayload = Omit<
   Reservation,
   'id' | 'createdAt' | 'updatedAt' | 'statusHistory' | 'attachments'
@@ -45,18 +45,6 @@ function mapDocToReservation(docSnap: DocumentSnapshot): Reservation | null {
   const data = docSnap.data();
   if (!data) return null;
   return serializeFirestoreData<Reservation>({ id: docSnap.id, ...data });
-}
-
-function buildAttachment(payload: ReservationAttachmentInput, timestamp: Timestamp): ReservationAttachment {
-  return {
-    id: randomUUID(),
-    name: payload.name,
-    type: payload.type,
-    url: payload.url,
-    uploadedBy: payload.uploadedBy ?? 'admin',
-    key: payload.key,
-    createdAt: timestamp,
-  };
 }
 
 function buildHistoryEntry(
@@ -89,7 +77,7 @@ export async function createReserva(data: CreateReservaPayload): Promise<string>
   const now = Timestamp.now();
   const status: ReservationStatus = data.status ?? 'reserved';
   const attachments =
-    data.attachments?.map((attachment) => buildAttachment(attachment, now)) ?? [];
+    data.attachments?.map((attachment) => buildReservationAttachment(attachment, now)) ?? [];
   const ref = doc(collection(db, COLLECTION));
   const reservationCode = await reserveNextReservationCode();
   const payload = {
@@ -143,7 +131,7 @@ export async function addReservaAttachments(
 ): Promise<void> {
   if (attachments.length === 0) return;
   const now = Timestamp.now();
-  const docs = attachments.map((attachment) => buildAttachment(attachment, now));
+  const docs = attachments.map((attachment) => buildReservationAttachment(attachment, now));
   const ref = doc(db, COLLECTION, id);
   await updateDoc(ref, {
     attachments: arrayUnion(...docs),
