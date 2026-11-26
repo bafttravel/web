@@ -10,7 +10,6 @@ import { z } from 'zod';
 import {
   addReservaAttachments,
   getReservaById,
-  removeReservaAttachmentsById,
   updateReservaStatus,
 } from '@/lib/reservas';
 import { getPaqueteById } from '@/lib/paquetes';
@@ -54,6 +53,7 @@ import {
 import { buildReservationPricingSnapshot } from '@/lib/sales/orchestrator';
 import { calculateVoucherReminderSchedule } from '@/lib/vouchers/schedule';
 import { buildReservationAttachment } from '@/lib/reservas/attachments';
+import { removeReservaAttachmentsById } from '@/lib/admin/reservation-attachments';
 
 const COLLECTION = 'reservas';
 
@@ -835,6 +835,7 @@ export async function createReservaCore(request: Request, ctx: ReservaActorConte
 
 export async function patchReservaCore(request: Request, ctx: ReservaActorContext) {
   const adminUser = { email: ctx.email };
+  let fileDeletionWarnings = 0;
 
   let payload: z.infer<typeof adminUpdateSchema>;
   try {
@@ -1063,7 +1064,9 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       }
     }
     if (payload.removeAttachments?.length) {
-      await removeReservaAttachmentsById(
+      if (!adminDb) throw new Error('Firebase Admin no está configurado');
+      fileDeletionWarnings = await removeReservaAttachmentsById(
+        adminDb,
         payload.reservationId,
         payload.removeAttachments.map((item) => item.id)
       );
@@ -1421,7 +1424,7 @@ export async function patchReservaCore(request: Request, ctx: ReservaActorContex
       );
     }
 
-    return NextResponse.json({ success: true, emails: emailResults });
+    return NextResponse.json({ success: true, emails: emailResults, fileDeletionWarnings });
   } catch (error) {
     console.error('[admin/reservas] Error actualizando reserva:', error);
     return NextResponse.json({ error: 'No se pudo actualizar la reserva' }, { status: 500 });

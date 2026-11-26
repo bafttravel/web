@@ -15,7 +15,6 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
-import { deleteBlobAsset } from '@/lib/blob';
 import {
   normalizeDigits,
   normalizeEmail,
@@ -25,7 +24,6 @@ import { serializeFirestoreData } from '@/lib/utils/serialize';
 import { buildReservationAttachment, type ReservationAttachmentInput } from '@/lib/reservas/attachments';
 import type {
   Reservation,
-  ReservationAttachment,
   ReservationHistoryItem,
   ReservationStatus,
 } from '@/components/landing-reserva/types';
@@ -59,17 +57,6 @@ function buildHistoryEntry(
     note,
     createdAt: timestamp,
   };
-}
-
-function getBlobKeyFromUrl(url?: string): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    const pathname = parsed.pathname;
-    return pathname.startsWith('/') ? pathname.slice(1) : pathname;
-  } catch {
-    return null;
-  }
 }
 
 /** Crea una reserva en Firestore (usado por el webhook al completar checkout y el admin). */
@@ -137,34 +124,6 @@ export async function addReservaAttachments(
     attachments: arrayUnion(...docs),
     updatedAt: now,
   });
-}
-
-export async function removeReservaAttachmentsById(
-  id: string,
-  attachmentIds: string[]
-): Promise<ReservationAttachment[]> {
-  if (attachmentIds.length === 0) return [];
-  const ref = doc(db, COLLECTION, id);
-  const snapshot = await getDoc(ref);
-  if (!snapshot.exists()) return [];
-  const reservation = mapDocToReservation(snapshot);
-  const current = reservation?.attachments ?? [];
-  const toRemove = current.filter((attachment) => attachmentIds.includes(attachment.id));
-  const remaining = current.filter((attachment) => !attachmentIds.includes(attachment.id));
-  await updateDoc(ref, {
-    attachments: remaining.length > 0 ? remaining : [],
-    updatedAt: Timestamp.now(),
-  });
-  for (const attachment of toRemove) {
-    const key = attachment.key ?? getBlobKeyFromUrl(attachment.url);
-    if (!key) continue;
-    try {
-      await deleteBlobAsset(key);
-    } catch (error) {
-      console.error('[reservas] Error borrando blob:', error);
-    }
-  }
-  return toRemove;
 }
 
 /** Lista reservas con filtros opcionales. Orden por createdAt desc. */

@@ -1,5 +1,6 @@
 import { FieldValue, type Firestore, type WriteBatch } from 'firebase-admin/firestore';
 import { deleteBlobAsset } from '@/lib/blob';
+import { getOwnedAttachmentKey } from './reservation-attachments';
 
 function financialSnapshot(reservation: Record<string, any>) {
   const operations = reservation.operations ?? {};
@@ -46,26 +47,6 @@ function financialSnapshot(reservation: Record<string, any>) {
         }
       : null,
   };
-}
-
-function getOwnedAttachmentKey(attachment: Record<string, unknown>): string | null {
-  if (!attachment || typeof attachment !== 'object') return null;
-  let key = typeof attachment.key === 'string' ? attachment.key.trim() : '';
-  if (!key && typeof attachment.url === 'string') {
-    try {
-      const url = new URL(attachment.url);
-      const publicBase = process.env.R2_PUBLIC_BASE;
-      if (!publicBase || url.origin !== new URL(publicBase).origin) return null;
-      key = decodeURIComponent(url.pathname.replace(/^\//, ''));
-    } catch {
-      return null;
-    }
-  }
-
-  if (!key || key.startsWith('comprobantes/') || key.includes('..') || key.startsWith('/')) return null;
-  if (key.startsWith('reservas/')) return key;
-  // Older reservation uploads used a UUID-prefixed object key at the bucket root.
-  return /^[\da-f]{8}-[\da-f-]{27}-/i.test(key) ? key : null;
 }
 
 async function writeInChunks(
@@ -137,7 +118,7 @@ export async function deleteReservationPermanently(
 
   const fileKeys = Array.isArray(reservation.attachments)
     ? [...new Set(reservation.attachments
-        .map((attachment: Record<string, unknown>) => getOwnedAttachmentKey(attachment))
+        .map((attachment: Record<string, unknown>) => getOwnedAttachmentKey(reservationId, attachment))
         .filter((key: string | null): key is string => Boolean(key)))]
     : [];
   const fileResults = await Promise.allSettled(fileKeys.map((key) => deleteBlobAsset(key)));

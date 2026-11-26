@@ -1,9 +1,8 @@
 'use client';
 import AdminFilePicker from '@/components/admin/AdminFilePicker';
 import AdminDatePicker from '@/components/admin/AdminDatePicker';
-import { RESERVATION_FILE_ACCEPT } from '@/lib/admin/files';
+import { RESERVATION_ATTACHMENT_ACCEPT } from '@/lib/admin/files';
 import { MAX_MULTIPART_FILE_BYTES } from '@/lib/utils/imageValidation';
-import { uploadFile } from '@/lib/utils/upload';
 import { adminDateLabel, adminDateTimeLabel } from '@/lib/admin/dates';
 import ReservationOperationsPanel from '@/components/admin/ReservationOperationsPanel';
 import { collectorForPayment } from '@/lib/operations/calculations';
@@ -509,6 +508,7 @@ export default function ReservaDetailPage() {
     });
     const result = await response.json().catch(() => null);
     if (!response.ok) throw new Error(result?.error || 'No se pudieron guardar los cambios');
+    return result;
   };
 
   const saveDepartureDate = async () => {
@@ -694,17 +694,25 @@ export default function ReservaDetailPage() {
     const token = await authed(); if (!token) throw new Error('Iniciá sesión para adjuntar archivos');
     setUploading(true);
     try {
-      const uploaded = [];
       for (const file of Array.from(files)) {
-        const { url, key } = await uploadFile(file);
-        uploaded.push({ url, key, name: file.name, type: file.type || 'application/octet-stream', uploadedBy: 'admin' });
+        const body = new FormData();
+        body.set('file', file);
+        const response = await fetch(`/api/admin/reservas/${encodeURIComponent(reserva.id)}/adjuntos`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
+        }).catch(() => { throw new Error(`${file.name}: Se perdió la conexión. Podés reintentar sin duplicar el archivo.`); });
+        const result = await response.json().catch(() => null);
+        if (!response.ok || result?.ok !== true) {
+          const message = response.status === 413 ? 'El adjunto no puede superar 4 MB.' : result?.error || 'No se pudo adjuntar el archivo.';
+          const reference = result?.reference ? ` Referencia: ${result.reference}.` : '';
+          throw new Error(`${file.name}: ${message}${reference}`);
+        }
       }
-      await patchReservation(token, { attachments: uploaded });
-      toast.success('Comprobante agregado');
+      toast.success(files.length === 1 ? 'Comprobante adjuntado' : 'Comprobantes adjuntados');
       await load(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudieron adjuntar los archivos.';
       toast.error(message);
+      await load(false);
       throw new Error(message);
     } finally {
       setUploading(false);
@@ -715,13 +723,9 @@ export default function ReservaDetailPage() {
     const token = await authed(); if (!token) return;
     setRemovingIds((p) => [...p, id]);
     try {
-      const res = await fetch('/api/admin/reservas', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reservationId: reserva.id, removeAttachments: [{ id }] }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success('Comprobante eliminado');
+      const result = await patchReservation(token, { removeAttachments: [{ id }] });
+      if (result?.fileDeletionWarnings) toast.warning('Se quitó de la reserva, pero no se pudo borrar el archivo de R2.');
+      else toast.success('Comprobante eliminado');
       await load(false);
     } catch { toast.error('No pudimos eliminar el comprobante'); } finally { setRemovingIds((p) => p.filter((x) => x !== id)); }
   };
@@ -1070,7 +1074,7 @@ export default function ReservaDetailPage() {
                     <div><h2 className="text-base font-semibold text-slate-900">Comprobantes · {attachments.length}</h2><p className="mt-1 text-xs text-slate-500">Archivos relacionados con la venta y sus pagos.</p></div>
                   </div>
                 </div>
-                 <AdminFilePicker className="mt-4" label="Adjuntar comprobantes" description="PDF e imágenes" accept={RESERVATION_FILE_ACCEPT} maxSize={MAX_MULTIPART_FILE_BYTES} multiple maxFiles={10} busy={uploading} onFilesSelected={uploadFiles} processingLabel="Subiendo comprobantes…" successLabel="Comprobantes adjuntos" showSelectedFiles={false} retryable={false} />
+                 <AdminFilePicker className="mt-4" label="Adjuntar comprobantes" description="PDF, JPG, PNG o WebP" accept={RESERVATION_ATTACHMENT_ACCEPT} maxSize={MAX_MULTIPART_FILE_BYTES} multiple maxFiles={10} busy={uploading} onFilesSelected={uploadFiles} processingLabel="Subiendo comprobantes…" successLabel="Comprobantes adjuntos" showSelectedFiles={false} />
                 {attachments.length === 0 ? (
                   <p className="mt-3 text-sm text-slate-500">Sin archivos.</p>
                 ) : (

@@ -53,6 +53,7 @@ export async function POST(request: Request) {
 
     const requestedKey = formData.get('key');
     const key = (typeof requestedKey === 'string' && requestedKey) || `${randomUUID()}-${file.name}`;
+    if (key.startsWith('reservas/')) return NextResponse.json({ error: 'Usá la carga de adjuntos de la reserva.' }, { status: 403 });
     if (key.startsWith('comprobantes/')) {
       const guard = await guardAdmin(request); if (guard instanceof NextResponse) return guard;
     }
@@ -105,6 +106,7 @@ export async function DELETE(request: Request) {
     ensureR2Config();
     const payload = await request.json();
     const key = payload?.key;
+    if (typeof key === 'string' && key.startsWith('reservas/')) return NextResponse.json({ error: 'Eliminá el adjunto desde la reserva.' }, { status: 403 });
     if (typeof key === 'string' && key.startsWith('comprobantes/')) return NextResponse.json({ error: 'Los comprobantes contables no se eliminan' }, { status: 403 });
     if (!key) {
       return NextResponse.json({ error: 'Key requerida para eliminar' }, { status: 400 });

@@ -20,3 +20,17 @@ test('administrative writes reject unauthenticated requests before executing mut
   const response = await request.patch('/api/admin/reservation-operations', { data: {} });
   expect([401, 403, 500]).toContain(response.status());
 });
+
+test('reservation attachments reject unauthenticated multipart uploads', async ({ request }) => {
+  const response = await request.post('/api/admin/reservas/test/adjuntos', {
+    multipart: { file: { name: 'test.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7') } },
+  });
+  expect(response.status()).toBe(401);
+  expect(await response.json()).toEqual({ error: 'Autenticación inválida' });
+});
+
+test('the sale detail bundle compiles without importing server-only R2', async ({ request }) => {
+  const response = await request.get('/admin/ventas/test');
+  expect(response.status()).toBe(200);
+  expect(await response.text()).not.toContain('No se configuró R2_*');
+});

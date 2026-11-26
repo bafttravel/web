@@ -15,6 +15,7 @@ export function fileRejectionLabel(code: string, maxSize?: number, maxFiles = 1)
 }
 
 export const RECEIPT_ACCEPT = { 'application/pdf': ['.pdf'], 'image/jpeg': ['.jpg', '.jpeg'], 'image/png': ['.png'] };
+export const RESERVATION_ATTACHMENT_ACCEPT = { ...RECEIPT_ACCEPT, 'image/webp': ['.webp'] };
 export const IMAGE_ACCEPT = { 'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg'] };
 export const RESERVATION_FILE_ACCEPT = { ...IMAGE_ACCEPT, 'application/pdf': ['.pdf'] };
 export const RECEIPT_MAX_SIZE = 5 * 1024 * 1024;

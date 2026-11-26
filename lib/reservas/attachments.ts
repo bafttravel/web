@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { ReservationAttachment } from '../../components/landing-reserva/types.ts';
 
 export type ReservationAttachmentInput = Omit<ReservationAttachment, 'id' | 'createdAt' | 'uploadedBy'> & {
@@ -10,7 +9,7 @@ export function buildReservationAttachment(
   createdAt: ReservationAttachment['createdAt']
 ): ReservationAttachment {
   return {
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     url: payload.url,
     uploadedBy: payload.uploadedBy ?? 'admin',
     ...(payload.name !== undefined ? { name: payload.name } : {}),
